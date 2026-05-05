@@ -3799,6 +3799,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Komutlar:\n"
         "/status - Durum raporu\n"
         "/hot - Sıcak coinler\n"
+        "/trend - Trend izleme listesi\n"
         "/coin BTCUSDT - Tek coin analiz\n"
         "/scan - Hızlı tarama\n"
         "/whale BTCUSDT - Whale Eye detay\n"
@@ -3925,6 +3926,33 @@ async def cmd_whale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(msg)
 
 
+async def cmd_trend(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    trend_watch = memory.get("trend_watch", {})
+    if not trend_watch:
+        await update.message.reply_text("Şu an trend devam kilidine takılan coin yok.")
+        return
+
+    items = sorted(
+        trend_watch.items(),
+        key=lambda x: safe_float(x[1].get("score", 0)),
+        reverse=True
+    )[:12]
+
+    lines = ["🧲 Trend izleme / short erken kilidi:"]
+    for sym, rec in items:
+        first_price = safe_float(rec.get("first_price", 0))
+        last_price = safe_float(rec.get("last_price", 0))
+        move = pct_change(first_price, last_price) if first_price > 0 and last_price > 0 else 0.0
+        whale_conf = rec.get("whale_confidence", "-")
+        lines.append(
+            f"- {sym} | skor={safe_float(rec.get('score', 0)):.1f} | 🐋={whale_conf} | "
+            f"ilk={fmt_num(first_price)} | son={fmt_num(last_price)} | "
+            f"hareket=%{move:.2f} | kırılım={safe_float(rec.get('breakdown_score', 0)):.1f}"
+        )
+
+    await update.message.reply_text("\n".join(lines))
+
+
 async def cmd_av(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     merged: Dict[str, Dict[str, Any]] = {}
     for sym, rec in memory.get("hot", {}).items():
@@ -3991,6 +4019,7 @@ def build_app():
     application.add_handler(CommandHandler("coin", cmd_coin))
     application.add_handler(CommandHandler("hot", cmd_hot))
     application.add_handler(CommandHandler("whale", cmd_whale))
+    application.add_handler(CommandHandler("trend", cmd_trend))
     application.add_handler(CommandHandler("av", cmd_av))
     return application
 
