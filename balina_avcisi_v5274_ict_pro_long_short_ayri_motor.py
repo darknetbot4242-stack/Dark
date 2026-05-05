@@ -30,7 +30,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # Bu bot kesin kazanç garantisi vermez. Gerçek para öncesi kağıt üstünde test et.
 # =========================================================
 
-VERSION_NAME = "Balina Avcısı V5.2.7.4 ICT PRO LONG/SHORT AYRI MOTOR"
+VERSION_NAME = "Balina Avcısı V5.2.7.4 ICT PRO LONG/SHORT AYRI MOTOR ULTRA FIX"
 
 # -------------------------
 # ENV / AYARLAR
@@ -266,6 +266,14 @@ LONG_TP1_R_MULT = float(os.getenv("LONG_TP1_R_MULT", "1.15"))
 LONG_TP2_R_MULT = float(os.getenv("LONG_TP2_R_MULT", "1.75"))
 LONG_TP3_R_MULT = float(os.getenv("LONG_TP3_R_MULT", "2.50"))
 LONG_MIN_RR_TP1 = float(os.getenv("LONG_MIN_RR_TP1", "1.05"))
+
+# ULTRA FIX - Sabit TP yüzdesi ve yapısal stop tamponu
+# Kullanıcı TP mantığı: TP1=%1.0, TP2=%1.5, TP3=%2.0
+FIXED_TP1_PCT = float(os.getenv("FIXED_TP1_PCT", "1.0"))
+FIXED_TP2_PCT = float(os.getenv("FIXED_TP2_PCT", "1.5"))
+FIXED_TP3_PCT = float(os.getenv("FIXED_TP3_PCT", "2.0"))
+SHORT_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("SHORT_STRUCTURE_EXTRA_BUFFER_PCT", "0.18"))
+LONG_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("LONG_STRUCTURE_EXTRA_BUFFER_PCT", "0.18"))
 
 # Kullanıcı kararı: PEPE/Pepe türevleri bu botun coin evreninden çıkarıldı.
 # COINS env içine yanlışlıkla yazılsa bile bot havuza almaz.
@@ -1097,68 +1105,58 @@ def volumes(klines: List[List[Any]]) -> List[float]:
 
 
 def ema(values: List[float], period: int) -> List[float]:
-    """
-    Geçmişe bakan güvenli EMA.
-    Eski sürümde veri period'dan az olunca tüm seri avg(values) ile dolduruluyordu;
-    bu, botun ilk mumlarda geleceği bilen sahte EMA skoru üretmesine yol açabiliyordu.
-    Burada ilk değer seed alınır ve her bar sadece o ana kadarki veriyle smooth edilir.
-    """
     if not values:
         return []
-    clean_values = [safe_float(v, 0.0) for v in values]
-    if period <= 1:
-        return clean_values[:]
-
-    alpha = 2.0 / (period + 1.0)
-    out = [clean_values[0]]
-    for v in clean_values[1:]:
-        out.append((v * alpha) + (out[-1] * (1.0 - alpha)))
-    return out
-
-
-def _rsi_from_avgs(avg_gain: float, avg_loss: float) -> float:
-    if avg_loss <= 0 and avg_gain <= 0:
-        return 50.0
-    if avg_loss <= 0:
-        return 100.0
-    rs = avg_gain / avg_loss
-    return 100.0 - (100.0 / (1.0 + rs))
+    if len(values) < period:
+        base = avg(values)
+        return [base for _ in values]
+    alpha = 2 / (period + 1)
+    out = [avg(values[:period])]
+    for v in values[period:]:
+        out.append((v * alpha) + (out[-1] * (1 - alpha)))
+    pad = [out[0]] * (len(values) - len(out))
+    return pad + out
 
 
 def rsi(values: List[float], period: int = 14) -> List[float]:
     """
-    Gerçek Wilder RSI.
-    İlk average gain/loss bir kez alınır; sonraki her mum Wilder smoothing ile güncellenir.
-    Rolling slice ile her barda yeniden ortalama alma hatası kaldırıldı.
+    Wilder RSI.
+    İlk ortalama bir kez alınır, sonraki barlarda Wilder smoothing uygulanır.
+    Bu sayede RSI kapıları klasik RSI'a daha yakın çalışır.
     """
     if not values:
         return []
-    clean_values = [safe_float(v, 0.0) for v in values]
-    if period <= 0:
-        return [50.0 for _ in clean_values]
-    if len(clean_values) < period + 1:
-        return [50.0 for _ in clean_values]
+    if len(values) < period + 1:
+        return [50.0 for _ in values]
 
-    rsis = [50.0] * len(clean_values)
+    rsis = [50.0] * len(values)
     gains: List[float] = []
     losses: List[float] = []
 
-    for i in range(1, period + 1):
-        diff = clean_values[i] - clean_values[i - 1]
+    for i in range(1, len(values)):
+        diff = values[i] - values[i - 1]
         gains.append(max(diff, 0.0))
-        losses.append(max(-diff, 0.0))
+        losses.append(abs(min(diff, 0.0)))
 
-    avg_gain = sum(gains) / period
-    avg_loss = sum(losses) / period
-    rsis[period] = _rsi_from_avgs(avg_gain, avg_loss)
+    avg_gain = avg(gains[:period])
+    avg_loss = avg(losses[:period])
 
-    for i in range(period + 1, len(clean_values)):
-        diff = clean_values[i] - clean_values[i - 1]
-        gain = max(diff, 0.0)
-        loss = max(-diff, 0.0)
+    def calc_rsi(g: float, l: float) -> float:
+        if l == 0 and g == 0:
+            return 50.0
+        if l == 0:
+            return 100.0
+        rs = g / l
+        return 100.0 - (100.0 / (1.0 + rs))
+
+    rsis[period] = calc_rsi(avg_gain, avg_loss)
+
+    for i in range(period + 1, len(values)):
+        gain = gains[i - 1]
+        loss = losses[i - 1]
         avg_gain = ((avg_gain * (period - 1)) + gain) / period
         avg_loss = ((avg_loss * (period - 1)) + loss) / period
-        rsis[i] = _rsi_from_avgs(avg_gain, avg_loss)
+        rsis[i] = calc_rsi(avg_gain, avg_loss)
 
     return rsis
 
@@ -1372,77 +1370,61 @@ def trend_continuation_guard(
 
 def calculate_short_levels(entry: float, h1: List[float], last_atr1: float, last_atr5: float) -> Tuple[float, float, float, float, float]:
     """
-    SHORT stop karakteri korunur: son fitil/tepe + ATR tampon + min/max stop mesafesi.
-    TP'ler kullanıcı kararıyla sabittir:
-    TP1 = entry * 0.990, TP2 = entry * 0.985, TP3 = entry * 0.980.
-    Stop için ek kontrol: saçma yakın veya son tepe/çukur içinde kalan stop azaltılır.
+    SHORT stop karakteri korunur: son fitil tepesi + ATR tampon + minimum stop yüzdesi.
+    ULTRA FIX: tepe üstü tampon çok yapışık kalmasın diye küçük yapısal tampon eklenir.
+    TP mantığı kullanıcı sistemiyle sabit yüzdeye çevrildi: %1 / %1.5 / %2.
     """
     if entry <= 0:
         return 0.0, 0.0, 0.0, 0.0, 0.0
 
     recent_swing_high = max(h1[-12:]) if len(h1) >= 12 else max(h1) if h1 else entry
-    broader_swing_high = max(h1[-30:]) if len(h1) >= 30 else recent_swing_high
-    structural_high = max(recent_swing_high, broader_swing_high if broader_swing_high > entry else recent_swing_high)
-
     min_stop_dist = entry * (SHORT_MIN_STOP_PCT / 100.0)
     atr_stop_dist = max(last_atr1 * SHORT_STOP_ATR_MULT, min_stop_dist)
-    wick_buffer = max(last_atr1 * SHORT_STOP_WICK_ATR_BUFFER, entry * 0.0012)
-    wick_stop = structural_high + wick_buffer
+    structure_buffer = recent_swing_high * (SHORT_STRUCTURE_EXTRA_BUFFER_PCT / 100.0)
+    wick_buffer = max(last_atr1 * SHORT_STOP_WICK_ATR_BUFFER, entry * 0.0012, structure_buffer)
+    wick_stop = recent_swing_high + wick_buffer
     raw_stop = max(entry + atr_stop_dist, wick_stop)
     max_stop = entry * (1 + SHORT_MAX_STOP_PCT / 100.0)
     stop = min(raw_stop, max_stop)
 
-    # Saçma yakın stop veya son tepe içinde kalan stop olmasın.
-    absolute_min_stop = max(entry + min_stop_dist, recent_swing_high + max(wick_buffer * 0.35, entry * 0.0005))
-    if stop <= absolute_min_stop:
-        stop = min(max_stop, absolute_min_stop)
-    if stop <= entry:
+    if stop <= entry + min_stop_dist:
         stop = entry + min_stop_dist
 
-    tp1 = entry * 0.990
-    tp2 = entry * 0.985
-    tp3 = entry * 0.980
+    tp1 = entry * (1 - FIXED_TP1_PCT / 100.0)
+    tp2 = entry * (1 - FIXED_TP2_PCT / 100.0)
+    tp3 = entry * (1 - FIXED_TP3_PCT / 100.0)
     rr = (entry - tp1) / max(stop - entry, 1e-9)
     return stop, tp1, tp2, tp3, rr
-
 
 
 
 def calculate_long_levels(entry: float, l1: List[float], last_atr1: float, last_atr5: float) -> Tuple[float, float, float, float, float]:
     """
     LONG stop karakteri korunur: son dip / likidite süpürme altı + ATR tamponu.
-    TP'ler kullanıcı kararıyla sabittir:
-    TP1 = entry * 1.010, TP2 = entry * 1.015, TP3 = entry * 1.020.
-    Stop için ek kontrol: saçma yakın veya son dip/çukur içinde kalan stop azaltılır.
+    ULTRA FIX: dip/SSL üstüne yapışık kalmasın diye küçük yapısal tampon eklenir.
+    TP mantığı kullanıcı sistemiyle sabit yüzdeye çevrildi: %1 / %1.5 / %2.
     """
     if entry <= 0:
         return 0.0, 0.0, 0.0, 0.0, 0.0
 
     recent_swing_low = min(l1[-12:]) if len(l1) >= 12 else min(l1) if l1 else entry
-    broader_swing_low = min(l1[-30:]) if len(l1) >= 30 else recent_swing_low
-    structural_low = min(recent_swing_low, broader_swing_low if broader_swing_low < entry else recent_swing_low)
-
     min_stop_dist = entry * (LONG_MIN_STOP_PCT / 100.0)
     atr_stop_dist = max(last_atr1 * LONG_STOP_ATR_MULT, min_stop_dist)
-    wick_buffer = max(last_atr1 * LONG_STOP_WICK_ATR_BUFFER, entry * 0.0012)
-    wick_stop = structural_low - wick_buffer
+    structure_buffer = recent_swing_low * (LONG_STRUCTURE_EXTRA_BUFFER_PCT / 100.0)
+    wick_buffer = max(last_atr1 * LONG_STOP_WICK_ATR_BUFFER, entry * 0.0012, structure_buffer)
+    wick_stop = recent_swing_low - wick_buffer
     raw_stop = min(entry - atr_stop_dist, wick_stop)
     max_stop = entry * (1 - LONG_MAX_STOP_PCT / 100.0)
     stop = max(raw_stop, max_stop)
 
-    # Saçma yakın stop veya son dip içinde kalan stop olmasın.
-    absolute_max_stop = min(entry - min_stop_dist, recent_swing_low - max(wick_buffer * 0.35, entry * 0.0005))
-    if stop >= absolute_max_stop:
-        stop = max(max_stop, absolute_max_stop)
-    if stop >= entry:
+    if stop >= entry - min_stop_dist:
         stop = entry - min_stop_dist
 
-    tp1 = entry * 1.010
-    tp2 = entry * 1.015
-    tp3 = entry * 1.020
+    tp1 = entry * (1 + FIXED_TP1_PCT / 100.0)
+    tp2 = entry * (1 + FIXED_TP2_PCT / 100.0)
+    tp3 = entry * (1 + FIXED_TP3_PCT / 100.0)
     rr = (tp1 - entry) / max(entry - stop, 1e-9)
     return stop, tp1, tp2, tp3, rr
-
 
 
 def ict_find_pivots(hs: List[float], ls: List[float], left: int = 2, right: int = 2) -> Tuple[List[Tuple[int, float]], List[Tuple[int, float]]]:
@@ -4194,14 +4176,12 @@ def has_active_trade() -> bool:
 
 
 def global_signal_gap_active() -> bool:
-    # SIGNAL_SPACING_SEC=0 olsa bile aynı tarama/aynı saniye içinde ikinci sinyali engelle.
-    # 50$ manuel sermaye için çoklu pozisyon açtırma riskini azaltır; genel cooldown karakterini değiştirmez.
-    last_sig = safe_float(memory.get("last_signal_ts", 0))
-    if not last_sig:
-        return False
+    # HIZLI AV FIX: 30 dakikalık global susturma kaldırıldı.
+    # SIGNAL_SPACING_SEC=0 ise başka coin fırsatını engellemez.
     if SIGNAL_SPACING_SEC <= 0:
-        return time.time() - last_sig < 2.0
-    return time.time() - last_sig < SIGNAL_SPACING_SEC
+        return False
+    last_sig = safe_float(memory.get("last_signal_ts", 0))
+    return bool(last_sig and time.time() - last_sig < SIGNAL_SPACING_SEC)
 
 
 def signal_rank_score(res: Dict[str, Any]) -> float:
@@ -4231,13 +4211,8 @@ def select_best_signals(signals: List[Dict[str, Any]], limit: int = MAX_SIGNAL_P
     if not signals:
         return [], []
     ordered = sorted(signals, key=signal_rank_score, reverse=True)
-    # ONE_ACTIVE_TRADE_MODE=false + SIGNAL_SPACING_SEC=0 ikilisinde bile aynı taramada tek en iyi sinyal seçilir.
-    # Böylece manuel küçük sermayede aynı anda çoklu pozisyon riski azaltılır.
-    effective_limit = max(1, int(limit))
-    if not ONE_ACTIVE_TRADE_MODE and SIGNAL_SPACING_SEC <= 0:
-        effective_limit = 1
-    keep = ordered[:effective_limit]
-    suppressed = ordered[effective_limit:]
+    keep = ordered[:max(1, limit)]
+    suppressed = ordered[max(1, limit):]
     return keep, suppressed
 
 
@@ -4737,103 +4712,121 @@ async def maybe_send_hot_rise_updates() -> None:
                 rec["last_rise_notice_ts"] = now_ts
 
 
-def _followup_candle_hit(direction: str, kline: List[Any], stop: float, tp1: float, tp2: float, tp3: float) -> Dict[str, Any]:
-    high = safe_float(kline[2])
-    low = safe_float(kline[3])
-    direction = (direction or "SHORT").upper()
+def _kline_open_ts_sec(kline: List[Any]) -> float:
+    raw = safe_float(kline[0], 0.0)
+    if raw > 1_000_000_000_000:
+        return raw / 1000.0
+    if raw > 1_000_000_000:
+        return raw
+    return raw
 
+
+def _tp_hit_level(direction: str, high: float, low: float, tp1: float, tp2: float, tp3: float) -> int:
     if direction == "LONG":
-        stop_hit = low <= stop if stop > 0 else False
-        hit_level = ""
-        hit_price = 0.0
-        if high >= tp3 > 0:
-            hit_level, hit_price = "TP3", tp3
-        elif high >= tp2 > 0:
-            hit_level, hit_price = "TP2", tp2
-        elif high >= tp1 > 0:
-            hit_level, hit_price = "TP1", tp1
+        if tp3 > 0 and high >= tp3:
+            return 3
+        if tp2 > 0 and high >= tp2:
+            return 2
+        if tp1 > 0 and high >= tp1:
+            return 1
+        return 0
+    if tp3 > 0 and low <= tp3:
+        return 3
+    if tp2 > 0 and low <= tp2:
+        return 2
+    if tp1 > 0 and low <= tp1:
+        return 1
+    return 0
+
+
+def evaluate_followup_path(klines_1m: List[List[Any]], rec: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    2 saatlik sonucu son fiyata göre değil, sinyal sonrası 1m mum yoluna göre hesaplar.
+    TP geldiyse sonradan fiyat dönse bile en yüksek görülen TP sonuç olarak korunur.
+    """
+    direction = str(rec.get("direction", "SHORT")).upper()
+    sent_ts = safe_float(rec.get("sent_ts", rec.get("created_ts", 0)), 0)
+    entry = safe_float(rec.get("entry", 0))
+    stop = safe_float(rec.get("stop", 0))
+    tp1 = safe_float(rec.get("tp1", 0))
+    tp2 = safe_float(rec.get("tp2", 0))
+    tp3 = safe_float(rec.get("tp3", 0))
+
+    best_tp = 0
+    best_tp_price = 0.0
+    best_tp_ts = 0.0
+    stop_ts = 0.0
+    conflict_same_candle = False
+    max_favorable = entry
+    max_adverse = entry
+
+    rows = sorted(klines_1m or [], key=_kline_open_ts_sec)
+    for k in rows:
+        k_ts = _kline_open_ts_sec(k)
+        # Sinyalin geldiği 1m mumunu da dahil et; aksi halde hızlı TP kaçabilir.
+        if sent_ts and k_ts < sent_ts - 60:
+            continue
+
+        o = safe_float(k[1])
+        h = safe_float(k[2])
+        l = safe_float(k[3])
+        c = safe_float(k[4])
+
+        if direction == "LONG":
+            max_favorable = max(max_favorable, h)
+            max_adverse = min(max_adverse, l)
+            stop_hit = stop > 0 and l <= stop
+        else:
+            max_favorable = min(max_favorable, l) if max_favorable > 0 else l
+            max_adverse = max(max_adverse, h)
+            stop_hit = stop > 0 and h >= stop
+
+        hit_level = _tp_hit_level(direction, h, l, tp1, tp2, tp3)
+
+        if best_tp == 0 and stop_hit and hit_level == 0:
+            stop_ts = k_ts
+            break
+
+        if hit_level > best_tp:
+            best_tp = hit_level
+            best_tp_ts = k_ts
+            if hit_level == 3:
+                best_tp_price = tp3
+            elif hit_level == 2:
+                best_tp_price = tp2
+            else:
+                best_tp_price = tp1
+
+        if stop_hit and hit_level > 0 and best_tp == hit_level:
+            conflict_same_candle = True
+
+        # TP gördükten sonra stop gelirse, işlem en az o TP'yi görmüş sayılır.
+        if stop_hit and best_tp > 0:
+            stop_ts = k_ts
+            break
+
+    if best_tp >= 1:
+        outcome = f"TP{best_tp}"
+        detail = f"TP{best_tp} geldi"
+        if conflict_same_candle:
+            detail += " | Aynı 1m mumda TP/stop teması olabilir; en yüksek TP kaydı korunur"
+    elif stop_ts > 0:
+        outcome = "STOP"
+        detail = "Stop önce geldi"
     else:
-        stop_hit = high >= stop if stop > 0 else False
-        hit_level = ""
-        hit_price = 0.0
-        if 0 < tp3 and low <= tp3:
-            hit_level, hit_price = "TP3", tp3
-        elif 0 < tp2 and low <= tp2:
-            hit_level, hit_price = "TP2", tp2
-        elif 0 < tp1 and low <= tp1:
-            hit_level, hit_price = "TP1", tp1
-
-    return {"stop_hit": stop_hit, "tp_level": hit_level, "tp_price": hit_price}
-
-
-def evaluate_followup_path(
-    direction: str,
-    klines: List[List[Any]],
-    sent_ts: float,
-    entry: float,
-    stop: float,
-    tp1: float,
-    tp2: float,
-    tp3: float,
-) -> Dict[str, Any]:
-    """
-    2 saat sonra son fiyata bakarak hüküm vermez.
-    Sinyalden sonraki 1m mumları kronolojik tarar; stop mu TP mi önce geldi bulur.
-    Aynı 1m mumda hem stop hem TP görünürse sıra bilinemez; güvenli değerlendirme STOP kabul edilir.
-    """
-    if not klines:
-        return {"outcome": "MUM_VERİSİ_YOK", "detail": "Takip için 1m mum verisi alınamadı.", "last_price": 0.0}
-
-    sent_ms = int(sent_ts * 1000) if sent_ts else 0
-    scan: List[List[Any]] = []
-    for k in klines:
-        start_ms = kline_start_ms(k)
-        # Sinyal mumunu ve sonrasını al. Mum içi sıra 1m OHLC ile kesin bilinemez.
-        if not sent_ms or start_ms + interval_to_milliseconds("1m") >= sent_ms:
-            scan.append(k)
-
-    if not scan:
-        scan = klines[-min(len(klines), 120):]
-
-    last_price = safe_float(scan[-1][4]) if scan else 0.0
-    for k in scan:
-        hit = _followup_candle_hit(direction, k, stop, tp1, tp2, tp3)
-        candle_time = tr_str(kline_start_ms(k) / 1000) if kline_start_ms(k) else "-"
-        if hit["stop_hit"] and hit["tp_level"]:
-            return {
-                "outcome": "STOP",
-                "hit_level": "STOP",
-                "hit_price": stop,
-                "hit_time": candle_time,
-                "last_price": last_price,
-                "detail": f"Aynı 1m mumda hem {hit['tp_level']} hem stop göründü; güvenli değerlendirme STOP.",
-            }
-        if hit["stop_hit"]:
-            return {
-                "outcome": "STOP",
-                "hit_level": "STOP",
-                "hit_price": stop,
-                "hit_time": candle_time,
-                "last_price": last_price,
-                "detail": "Stop, TP seviyelerinden önce geldi.",
-            }
-        if hit["tp_level"]:
-            return {
-                "outcome": hit["tp_level"],
-                "hit_level": hit["tp_level"],
-                "hit_price": hit["tp_price"],
-                "hit_time": candle_time,
-                "last_price": last_price,
-                "detail": f"{hit['tp_level']}, stoptan önce geldi.",
-            }
+        outcome = "NÖTR"
+        detail = "TP/stop görülmedi"
 
     return {
-        "outcome": "NÖTR",
-        "hit_level": "YOK",
-        "hit_price": 0.0,
-        "hit_time": "-",
-        "last_price": last_price,
-        "detail": "Takip süresinde TP/stop görülmedi.",
+        "outcome": outcome,
+        "detail": detail,
+        "best_tp": best_tp,
+        "best_tp_price": best_tp_price,
+        "best_tp_ts": best_tp_ts,
+        "stop_ts": stop_ts,
+        "max_favorable": max_favorable,
+        "max_adverse": max_adverse,
+        "conflict_same_candle": conflict_same_candle,
     }
 
 
@@ -4841,6 +4834,7 @@ async def check_followups() -> None:
     follows = memory.get("follows", {})
     if not follows:
         return
+    tickers24 = await get_24h_tickers()
     now_ts = time.time()
     for key, rec in list(follows.items()):
         if rec.get("done"):
@@ -4849,39 +4843,51 @@ async def check_followups() -> None:
         if now_ts - sent_ts < FOLLOWUP_DELAY_SEC:
             continue
 
-        sym = normalize_symbol(str(rec.get("symbol", key)).replace("LONG:", "").replace("SHORT:", ""))
+        sym = str(rec.get("symbol", key)).replace("LONG:", "").replace("SHORT:", "")
         direction = str(rec.get("direction", "SHORT")).upper()
+        t = tickers24.get(sym, {})
+        cur = safe_float(t.get("last", 0))
+
         entry = safe_float(rec.get("entry", 0))
         stop = safe_float(rec.get("stop", 0))
         tp1 = safe_float(rec.get("tp1", 0))
         tp2 = safe_float(rec.get("tp2", 0))
         tp3 = safe_float(rec.get("tp3", 0))
 
-        # 2 saatlik takipte son fiyatla hüküm verme; sinyalden sonraki 1m mumları sırayla tara.
-        follow_limit = int(clamp((FOLLOWUP_DELAY_SEC / 60.0) + 80, 120, 300))
-        k1 = await get_klines(sym, "1m", follow_limit)
-        path = evaluate_followup_path(direction, k1, sent_ts, entry, stop, tp1, tp2, tp3)
-        cur = safe_float(path.get("last_price", 0))
+        # 2 saatlik takip: son fiyat değil, sinyal sonrası mum yolu.
+        elapsed_min = max(120, int((now_ts - sent_ts) / 60) + 5)
+        k_limit = min(300, max(150, elapsed_min))
+        k1 = await get_klines(sym, "1m", k_limit)
+        path = evaluate_followup_path(k1, rec)
+
+        if cur <= 0 and k1:
+            cur = safe_float(k1[-1][4], 0)
         if cur <= 0:
-            # Mum yoksa sonucu uydurma; sadece veri yok raporu bas.
-            cur = entry
+            continue
 
         if direction == "LONG":
             pnl_pct = pct_change(entry, cur)
-            direction_text = "Long yön tahmini değişim"
+            direction_text = "Long yön güncel değişim"
         else:
             pnl_pct = pct_change(entry, cur) * -1
-            direction_text = "Kısa yön tahmini değişim"
+            direction_text = "Short yön güncel değişim"
 
-        outcome = str(path.get("outcome", "NÖTR"))
-        hit_level = str(path.get("hit_level", "YOK"))
-        hit_price = safe_float(path.get("hit_price", 0))
-        hit_time = str(path.get("hit_time", "-"))
-        detail = str(path.get("detail", "-"))
+        outcome = path.get("outcome", "NÖTR")
+        best_tp = int(safe_float(path.get("best_tp", 0)))
+        best_tp_price = safe_float(path.get("best_tp_price", 0))
+        max_favorable = safe_float(path.get("max_favorable", 0))
+        max_adverse = safe_float(path.get("max_adverse", 0))
 
-        star_map = {"TP1": "⭐", "TP2": "⭐⭐", "TP3": "⭐⭐⭐"}
-        star_txt = f" {star_map[outcome]}" if outcome in star_map else ""
-        result_line = outcome + star_txt
+        if direction == "LONG":
+            fav_text = f"En yüksek: {fmt_num(max_favorable)}"
+            adv_text = f"En düşük: {fmt_num(max_adverse)}"
+        else:
+            fav_text = f"En düşük: {fmt_num(max_favorable)}"
+            adv_text = f"En yüksek: {fmt_num(max_adverse)}"
+
+        tp_seen_text = "Yok"
+        if best_tp > 0:
+            tp_seen_text = f"TP{best_tp} geldi ({fmt_num(best_tp_price)})"
 
         text = (
             f"⏱ 2 SAAT SONRA TAKİP\n"
@@ -4889,13 +4895,13 @@ async def check_followups() -> None:
             f"Yön: {direction}\n"
             f"Coin: {sym}\n"
             f"Entry: {fmt_num(entry)}\n"
+            f"Güncel: {fmt_num(cur)}\n"
             f"Stop: {fmt_num(stop)}\n"
             f"TP1/TP2/TP3: {fmt_num(tp1)} / {fmt_num(tp2)} / {fmt_num(tp3)}\n"
-            f"Güncel: {fmt_num(cur)}\n"
-            f"Sonuç: {result_line}\n"
-            f"İlk gelen seviye: {hit_level} {fmt_num(hit_price) if hit_price > 0 else '-'}\n"
-            f"İlk geliş saati: {hit_time}\n"
-            f"Mum sırası notu: {detail}\n"
+            f"Sonuç: {outcome}\n"
+            f"TP kaydı: {tp_seen_text}\n"
+            f"Yol okuma: {path.get('detail', '-')}\n"
+            f"{fav_text} | {adv_text}\n"
             f"{direction_text}: %{pnl_pct:.2f}"
         )
         ok = await safe_send_telegram(text)
@@ -4903,10 +4909,8 @@ async def check_followups() -> None:
             stats["followup_sent"] += 1
             rec["done"] = True
             rec["outcome"] = outcome
-            rec["hit_level"] = hit_level
-            rec["hit_price"] = hit_price
-            rec["hit_time"] = hit_time
-
+            rec["best_tp"] = best_tp
+            rec["best_tp_price"] = best_tp_price
 
 # =========================================================
 # TARAMA DÖNGÜLERİ
