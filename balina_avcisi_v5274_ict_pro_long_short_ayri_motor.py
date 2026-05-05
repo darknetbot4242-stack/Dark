@@ -4909,6 +4909,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Komutlar:\n"
         "/status - durum\n"
         "/test - test mesajı\n"
+        "/id - bu sohbetin/grubun chat ID bilgisini gösterir\n"
         "/scan - kısa özet tarama\n"
         "/coin BTCUSDT - tek coin analiz\n"
         "/hot - sıcak coinler\n"
@@ -4921,6 +4922,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ok = await safe_send_telegram(f"✅ Test mesajı başarılı. Saat: {tr_str()}")
     await update.message.reply_text("Test mesajı gönderildi." if ok else "Test mesajı gönderilemedi.")
+
+
+async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Komutun yazıldığı özel sohbetin veya grubun Telegram chat ID bilgisini döndürür."""
+    chat = update.effective_chat
+    title = chat.title or chat.first_name or chat.username or "-"
+    await update.message.reply_text(
+        f"CHAT ID: {chat.id}\n"
+        f"CHAT TYPE: {chat.type}\n"
+        f"CHAT TITLE: {title}"
+    )
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -5102,6 +5114,7 @@ def build_app():
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("test", cmd_test))
+    application.add_handler(CommandHandler("id", cmd_id))
     application.add_handler(CommandHandler("status", cmd_status))
     application.add_handler(CommandHandler("health", cmd_status))
     application.add_handler(CommandHandler("scan", cmd_scan))
