@@ -5306,6 +5306,107 @@ def professional_ai_status_line() -> str:
 
 
 
+async def cmd_ai_durum_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ana bot seviyesinde garanti /ai_durum cevabı.
+    Embedded AI handler eklenemese bile kullanıcı sessiz kalmasın diye burada doğrudan yanıt verir.
+    """
+    try:
+        if not PROFESSIONAL_AI_AVAILABLE:
+            await update.message.reply_text(
+                "🧠 PROFESYONEL KRİPTO AI DURUM\n"
+                f"Durum: ❌ Yüklenemedi\n"
+                f"Hata: {PROFESSIONAL_AI_LOAD_ERROR or 'Bilinmeyen yükleme hatası'}\n"
+                "Not: Bu cevap geldiyse /ai_durum komutu artık bağlı; sorun AI modülünün yüklenmesindedir."
+            )
+            return
+
+        await init_professional_crypto_ai_embedded()
+        ai_obj = _PROFESSIONAL_AI_NS.get("professional_ai")
+        api_key = _PROFESSIONAL_AI_NS.get("DEEPSEEK_API_KEY", "")
+        model = _PROFESSIONAL_AI_NS.get("DEEPSEEK_MODEL", "deepseek-chat")
+        enabled = bool(_PROFESSIONAL_AI_NS.get("PRO_AI_ENABLED", False))
+
+        msg = "🧠 PROFESYONEL KRİPTO AI DURUM\n"
+        msg += f"Modül: {'✅ Yüklü' if PROFESSIONAL_AI_AVAILABLE else '❌ Yok'}\n"
+        msg += f"AI açık: {'✅ Evet' if enabled else '⚪ Hayır'}\n"
+        msg += f"DeepSeek key: {'✅ Var' if api_key else '❌ Yok'}\n"
+        msg += f"Model: {model}\n"
+
+        if ai_obj is not None:
+            s = getattr(ai_obj, 'stats', {}) or {}
+            msg += f"Araştırma: {s.get('research_count', 0)}\n"
+            msg += f"LONG AL: {s.get('long_al', 0)} | SHORT AL: {s.get('short_al', 0)}\n"
+            msg += f"Sessiz: {s.get('silent', 0)} | AI hata: {s.get('ai_error', 0)}\n"
+            last_error = s.get('last_error', '')
+            if last_error:
+                msg += f"Son hata: {str(last_error)[:160]}\n"
+            try:
+                http_cache = ai_obj.http.cache.stats()
+                ai_cache = ai_obj.brain.cache.stats()
+                msg += f"HTTP Cache: {http_cache.get('size', 0)}/{http_cache.get('max_size', 0)} | Hit %{http_cache.get('hit_rate', 0)}\n"
+                msg += f"AI Cache: {ai_cache.get('size', 0)}/{ai_cache.get('max_size', 0)} | Hit %{ai_cache.get('hit_rate', 0)}\n"
+            except Exception:
+                pass
+        else:
+            msg += "AI nesnesi: ⚠️ Başlatılamadı\n"
+
+        msg += "\nKomutlar: /zeka BTC | /arastir BTC | /yon BTC"
+        await update.message.reply_text(msg[:3900])
+    except Exception as e:
+        await update.message.reply_text(f"❌ /ai_durum hata: {str(e)[:220]}")
+
+
+async def cmd_zeka_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if not context.args:
+            await update.message.reply_text("Kullanım: /zeka BTC")
+            return
+        if not PROFESSIONAL_AI_AVAILABLE:
+            await update.message.reply_text("❌ Profesyonel AI yüklenemedi: " + (PROFESSIONAL_AI_LOAD_ERROR or "bilinmeyen hata"))
+            return
+        symbol = context.args[0].upper().strip()
+        await update.message.reply_text(f"🧠 {symbol} derin araştırma yapılıyor...")
+        await init_professional_crypto_ai_embedded()
+        research_fn = _PROFESSIONAL_AI_NS.get("run_professional_ai_research")
+        report_fn = _PROFESSIONAL_AI_NS.get("build_research_report")
+        if not research_fn or not report_fn:
+            await update.message.reply_text("❌ Profesyonel AI araştırma fonksiyonu bulunamadı.")
+            return
+        verdict = await research_fn(symbol, include_external=True)
+        msg = report_fn(verdict)
+        await update.message.reply_text(str(msg)[:3900])
+    except Exception as e:
+        await update.message.reply_text(f"❌ /zeka hata: {str(e)[:220]}")
+
+
+async def cmd_arastir_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await cmd_zeka_direct(update, context)
+
+
+async def cmd_yon_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if not context.args:
+            await update.message.reply_text("Kullanım: /yon BTC")
+            return
+        if not PROFESSIONAL_AI_AVAILABLE:
+            await update.message.reply_text("❌ Profesyonel AI yüklenemedi: " + (PROFESSIONAL_AI_LOAD_ERROR or "bilinmeyen hata"))
+            return
+        symbol = context.args[0].upper().strip()
+        await update.message.reply_text(f"🧭 {symbol} yön analizi yapılıyor...")
+        await init_professional_crypto_ai_embedded()
+        research_fn = _PROFESSIONAL_AI_NS.get("run_professional_ai_research")
+        report_fn = _PROFESSIONAL_AI_NS.get("build_research_report")
+        if not research_fn or not report_fn:
+            await update.message.reply_text("❌ Profesyonel AI yön fonksiyonu bulunamadı.")
+            return
+        verdict = await research_fn(symbol, include_external=False)
+        msg = report_fn(verdict)
+        await update.message.reply_text(str(msg)[:3900])
+    except Exception as e:
+        await update.message.reply_text(f"❌ /yon hata: {str(e)[:220]}")
+
+
+
 
 async def maybe_send_signal(res: Dict[str, Any]) -> None:
     symbol = res["symbol"]
@@ -5933,6 +6034,13 @@ def build_app():
     application.add_handler(CommandHandler("whale", cmd_whale))
     application.add_handler(CommandHandler("trend", cmd_trend))
     application.add_handler(CommandHandler("av", cmd_av))
+    # Profesyonel AI komutları ana bot seviyesinde garanti eklenir.
+    # Böylece embedded handler yüklenmese bile /ai_durum sessiz kalmaz.
+    application.add_handler(CommandHandler("ai_durum", cmd_ai_durum_direct))
+    application.add_handler(CommandHandler("zeka", cmd_zeka_direct))
+    application.add_handler(CommandHandler("arastir", cmd_arastir_direct))
+    application.add_handler(CommandHandler("yon", cmd_yon_direct))
+    # Eski embedded ekleyici de çalışabilir; aynı komut varsa ana direct handler ilk yakalar.
     add_professional_ai_handlers_embedded(application)
     return application
 
