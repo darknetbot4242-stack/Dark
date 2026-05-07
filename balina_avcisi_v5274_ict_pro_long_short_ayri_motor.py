@@ -35,7 +35,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.0 WHALE EYE - OI/Funding/Spoofing Motorlu"
+VERSION_NAME = "Balina Avcısı V6.0 WHALE EYE + Profesyonel Kripto AI FINAL FIX"
 
 # =========================================================
 # ENV / AYARLAR
@@ -5230,10 +5230,20 @@ if __name__ == "__main__":
     asyncio.run(_cli_main())
 
 '''
-_PROFESSIONAL_AI_NS: Dict[str, Any] = {
-    "__name__": "_embedded_professional_crypto_ai",
-    "__file__": "<embedded_professional_crypto_ai>",
-}
+# Dataclass kullanan gömülü modülün güvenli yüklenmesi.
+# Not: dataclasses, sınıfın __module__ değerini sys.modules içinde arar.
+# Modül sys.modules'a eklenmezse Railway/Python 3.11 ortamında:
+# "'NoneType' object has no attribute '__dict__'" hatası oluşabilir.
+import sys as _pro_ai_sys
+import types as _pro_ai_types
+_PROFESSIONAL_AI_MODULE_NAME = "_embedded_professional_crypto_ai"
+_PROFESSIONAL_AI_MODULE = _pro_ai_types.ModuleType(_PROFESSIONAL_AI_MODULE_NAME)
+_PROFESSIONAL_AI_MODULE.__file__ = "<embedded_professional_crypto_ai>"
+_PROFESSIONAL_AI_NS: Dict[str, Any] = _PROFESSIONAL_AI_MODULE.__dict__
+_PROFESSIONAL_AI_NS["__name__"] = _PROFESSIONAL_AI_MODULE_NAME
+_PROFESSIONAL_AI_NS["__file__"] = "<embedded_professional_crypto_ai>"
+_pro_ai_sys.modules[_PROFESSIONAL_AI_MODULE_NAME] = _PROFESSIONAL_AI_MODULE
+
 PROFESSIONAL_AI_AVAILABLE = False
 PROFESSIONAL_AI_LOAD_ERROR = ""
 try:
@@ -6083,3 +6093,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+ 
