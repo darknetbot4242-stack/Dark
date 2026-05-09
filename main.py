@@ -35,7 +35,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.0 WHALE EYE + AI OTOMATİK SİNYAL PRO FIX"
+VERSION_NAME = "Balina Avcısı V6.0 WHALE EYE + AI OTOMATİK SİNYAL PRO FIX + SPAM KİLİDİ"
 
 # =========================================================
 # ENV / AYARLAR
@@ -285,6 +285,11 @@ PRO_AI_AUTOSIGNAL_BATCH_SIZE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_BATCH_SIZE
 PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL = os.getenv("PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL", "true").lower() == "true"
 PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC", "900")))
 PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE", "1")))
+# AI otomatik köprü için sert tekrar kilidi. Aynı coin + aynı yön yeniden basılmaz.
+# Varsayılan 6 saat: kullanıcı daha önce aynı coin tekrarını bug olarak gördüğü için.
+PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC", "21600")))
+# Telegram API cevap vermese bile mesaj gitmiş olabilir; bu yüzden AI sinyalinde gönderimden ÖNCE kilit atılır.
+PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED", "true").lower() == "true"
 
 BLOCKED_COIN_BASE_KEYWORDS = tuple(
     x.strip().upper()
@@ -414,6 +419,7 @@ memory: Dict[str, Any] = {
     "stats": {},
     "daily_short_sent": {},
     "daily_long_sent": {},
+    "ai_auto_sent_lock": {},
     "last_signal_ts": 0.0,
     "last_signal_attempt_ts": 0.0,
     "last_diag_ts": 0.0,
@@ -571,6 +577,7 @@ def ensure_memory_shape() -> None:
     memory.setdefault("stats", {})
     memory.setdefault("daily_short_sent", {})
     memory.setdefault("daily_long_sent", {})
+    memory.setdefault("ai_auto_sent_lock", {})
     memory.setdefault("last_signal_ts", 0.0)
     memory.setdefault("last_signal_attempt_ts", 0.0)
     memory.setdefault("last_diag_ts", 0.0)
@@ -673,6 +680,13 @@ def cleanup_memory() -> None:
                     daily_long_sent.pop(day_key, None)
             except Exception:
                 daily_long_sent.pop(day_key, None)
+    # AI otomatik sinyal tekrar kilitlerini temizle
+    ai_locks = memory.get("ai_auto_sent_lock", {})
+    for lock_key in list(ai_locks.keys()):
+        rec = ai_locks.get(lock_key, {}) if isinstance(ai_locks.get(lock_key, {}), dict) else {}
+        ts = safe_float(rec.get("ts", 0))
+        if not ts or now_ts - ts > max(PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC, 24 * 3600):
+            ai_locks.pop(lock_key, None)
     cleanup_symbol_fail_state()
 
 
@@ -3369,6 +3383,44 @@ def get_daily_trade_limit(direction: str) -> int:
     return LONG_DAILY_TOTAL_LIMIT if (direction or "SHORT").upper() == "LONG" else DAILY_SHORT_TOTAL_LIMIT
 
 
+def ai_auto_lock_key(symbol: str, direction: str) -> str:
+    return f"{(direction or '').upper()}:{normalize_symbol(symbol)}"
+
+
+def ai_auto_recently_locked(symbol: str, direction: str) -> bool:
+    direction = (direction or "").upper()
+    if direction not in ("LONG", "SHORT"):
+        return False
+    # Günlük kilit zaten varsa aynı coin/yön tekrar basılmasın.
+    if daily_trade_already_sent(normalize_symbol(symbol), direction):
+        return True
+    lock_key = ai_auto_lock_key(symbol, direction)
+    rec = memory.setdefault("ai_auto_sent_lock", {}).get(lock_key, {})
+    last_ts = safe_float(rec.get("ts", 0)) if isinstance(rec, dict) else 0.0
+    if last_ts and time.time() - last_ts < PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC:
+        return True
+    # Aktif takipte aynı coin/yön varsa tekrar basma.
+    follow_key = f"{direction}:{normalize_symbol(symbol)}"
+    follow = memory.get("follows", {}).get(follow_key, {})
+    if isinstance(follow, dict) and follow and not bool(follow.get("done", False)):
+        return True
+    return False
+
+
+def mark_ai_auto_signal_lock(symbol: str, direction: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    direction = (direction or "").upper()
+    if direction not in ("LONG", "SHORT"):
+        return
+    sym = normalize_symbol(symbol)
+    memory.setdefault("ai_auto_sent_lock", {})[ai_auto_lock_key(sym, direction)] = {
+        "ts": time.time(),
+        "symbol": sym,
+        "direction": direction,
+        "price": safe_float((payload or {}).get("price", 0)),
+        "score": safe_float((payload or {}).get("score", 0)),
+    }
+
+
 def update_hot_memory(res: Dict[str, Any]) -> None:
     res = copy.deepcopy(res)
     sym = res["symbol"]
@@ -5701,6 +5753,9 @@ async def maybe_build_ai_auto_signal_for_symbol(symbol: str) -> Optional[Dict[st
     last_ts = safe_float(rec.get("last_ts", 0))
     if last_ts and now_ts - last_ts < PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC:
         return None
+    # Aynı coin için yakın zamanda AI sinyali gittiyse pahalı AI araştırmasına bile girme.
+    if ai_auto_recently_locked(symbol, "LONG") or ai_auto_recently_locked(symbol, "SHORT"):
+        return None
 
     research_fn = _PROFESSIONAL_AI_NS.get("run_professional_ai_research")
     if not research_fn:
@@ -5722,7 +5777,8 @@ async def maybe_build_ai_auto_signal_for_symbol(symbol: str) -> Optional[Dict[st
         }
         if not verdict.get("send_signal"):
             return None
-        if direction and daily_trade_already_sent(symbol, direction):
+        if direction and ai_auto_recently_locked(symbol, direction):
+            stats["cooldown_reject"] = stats.get("cooldown_reject", 0) + 1
             return None
         payload = build_ai_auto_signal_payload(symbol, verdict)
         if payload:
@@ -5819,6 +5875,20 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
             update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
             return
 
+        # AI otomatik köprüden gelen sinyallerde tekrar/spam kilidi gönderimden ÖNCE atılır.
+        # Sebep: Telegram mesajı gitmiş ama API cevabı/timeout yüzünden ok=False dönebilir;
+        # bu durumda hafıza yazılmazsa aynı coin 2-3 dk içinde tekrar basar.
+        if res.get("ai_auto_promoted"):
+            if ai_auto_recently_locked(symbol, direction):
+                stats["cooldown_reject"] = stats.get("cooldown_reject", 0) + 1
+                logger.info("AI OTOMATİK TEKRAR KİLİDİ %s %s", direction, symbol)
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
+                return
+            if PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED:
+                mark_ai_auto_signal_lock(symbol, direction, res)
+                set_daily_trade_sent(symbol, res)
+                save_memory()
+
         if direction == "SHORT":
             confirm = await confirm_signal_on_binance(res)
             res["data_engine"] = "OKX SWAP"
@@ -5861,6 +5931,8 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
             if direction == "LONG":
                 stats["long_signal_sent"] += 1
             set_daily_trade_sent(symbol, res)
+            if res.get("ai_auto_promoted"):
+                mark_ai_auto_signal_lock(symbol, direction, res)
             follow_key = f"{direction}:{symbol}"
             memory.setdefault("follows", {})[follow_key] = {
                 "created_ts": time.time(), "symbol": symbol, "direction": direction,
