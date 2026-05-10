@@ -35,7 +35,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.0 WHALE EYE + AI OTOMATİK SİNYAL PRO FIX + SIKI KALİTE KAPISI"
+VERSION_NAME = "Balina Avcısı V6.0 WHALE EYE + AI OTOMATİK SİNYAL PRO FIX + SPAM KİLİDİ"
 
 # =========================================================
 # ENV / AYARLAR
@@ -277,38 +277,19 @@ LONG_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("LONG_STRUCTURE_EXTRA_BUFFER_P
 # =========================================================
 # PROFESYONEL AI OTOMATİK SİNYAL KÖPRÜSÜ
 # =========================================================
-# Ana bot SIGNAL üretmese bile AI yön/zeka motoru coinleri düzenli tarar.
-# Çözüm botu susturmak değil: AI radar çalışır, ama Telegram'a sadece sıkı kalite kapısından geçen AL gider.
+# Ana bot SIGNAL üretmese bile AI yön/zeka motoru belirli aralıklarla coinleri tarar.
+# AI gerçekten LONG_AL/SHORT_AL üretirse dışarıya sadece normal AL mesajı gider.
 PRO_AI_AUTOSIGNAL_LOOP_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LOOP_ENABLED", "true").lower() == "true"
-PRO_AI_AUTOSIGNAL_INTERVAL_SEC = float(os.getenv("PRO_AI_AUTOSIGNAL_INTERVAL_SEC", "60"))
-PRO_AI_AUTOSIGNAL_BATCH_SIZE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_BATCH_SIZE", "6")))
+PRO_AI_AUTOSIGNAL_INTERVAL_SEC = float(os.getenv("PRO_AI_AUTOSIGNAL_INTERVAL_SEC", "18"))
+PRO_AI_AUTOSIGNAL_BATCH_SIZE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_BATCH_SIZE", "2")))
 PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL = os.getenv("PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL", "true").lower() == "true"
-PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC", "60")))
+PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC", "900")))
 PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE", "1")))
-# AI otomatik köprü için sert tekrar kilidi. Aynı coin yeniden basılmaz.
+# AI otomatik köprü için sert tekrar kilidi. Aynı coin + aynı yön yeniden basılmaz.
+# Varsayılan 6 saat: kullanıcı daha önce aynı coin tekrarını bug olarak gördüğü için.
 PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC", "21600")))
-PRO_AI_AUTOSIGNAL_SAME_SYMBOL_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_SAME_SYMBOL_COOLDOWN_SEC", "21600")))
 # Telegram API cevap vermese bile mesaj gitmiş olabilir; bu yüzden AI sinyalinde gönderimden ÖNCE kilit atılır.
 PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED", "true").lower() == "true"
-# AI otomatik sinyal kalite kapısı: /zeka takip edebilir, ama bu eşikler geçilmeden AL mesajı yok.
-PRO_AI_AUTOSIGNAL_STRICT_GATE_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_STRICT_GATE_ENABLED", "true").lower() == "true"
-PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE", "72"))
-PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE", "70"))
-PRO_AI_AUTOSIGNAL_MAX_RISK = float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_RISK", "32"))
-PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE", "35"))
-PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE", "28"))
-PRO_AI_AUTOSIGNAL_LONG_MIN_BUY_SELL = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MIN_BUY_SELL", "2.20"))
-PRO_AI_AUTOSIGNAL_SHORT_MIN_SELL_BUY = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_SELL_BUY", "1.80"))
-PRO_AI_AUTOSIGNAL_REQUIRE_REAL_VOLUME = os.getenv("PRO_AI_AUTOSIGNAL_REQUIRE_REAL_VOLUME", "true").lower() == "true"
-PRO_AI_AUTOSIGNAL_MIN_VOL_1M_MULT = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_VOL_1M_MULT", "0.45"))
-PRO_AI_AUTOSIGNAL_MIN_VOL_5M_MULT = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_VOL_5M_MULT", "0.30"))
-PRO_AI_AUTOSIGNAL_BLOCK_LOW_ATR_PCT = float(os.getenv("PRO_AI_AUTOSIGNAL_BLOCK_LOW_ATR_PCT", "0.05"))
-PRO_AI_AUTOSIGNAL_LONG_MAX_RSI_1M = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MAX_RSI_1M", "67"))
-PRO_AI_AUTOSIGNAL_LONG_MAX_RSI_5M = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MAX_RSI_5M", "68"))
-PRO_AI_AUTOSIGNAL_SHORT_MIN_RSI_1M = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_RSI_1M", "33"))
-PRO_AI_AUTOSIGNAL_SHORT_MIN_RSI_5M = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_RSI_5M", "34"))
-PRO_AI_AUTOSIGNAL_REQUIRE_15M_CONTEXT = os.getenv("PRO_AI_AUTOSIGNAL_REQUIRE_15M_CONTEXT", "true").lower() == "true"
-PRO_AI_AUTOSIGNAL_HARD_LOCK_FILE = os.getenv("PRO_AI_AUTOSIGNAL_HARD_LOCK_FILE", MEMORY_FILE + ".ai_auto_lock")
 
 BLOCKED_COIN_BASE_KEYWORDS = tuple(
     x.strip().upper()
@@ -3410,28 +3391,16 @@ def ai_auto_recently_locked(symbol: str, direction: str) -> bool:
     direction = (direction or "").upper()
     if direction not in ("LONG", "SHORT"):
         return False
-    sym = normalize_symbol(symbol)
     # Günlük kilit zaten varsa aynı coin/yön tekrar basılmasın.
-    if daily_trade_already_sent(sym, direction):
+    if daily_trade_already_sent(normalize_symbol(symbol), direction):
         return True
-
-    locks = memory.setdefault("ai_auto_sent_lock", {})
-    now_ts = time.time()
-
-    # Aynı coin herhangi bir yönde kısa süre içinde yeniden basılmasın.
-    any_rec = locks.get(ai_auto_lock_key(sym, "ANY"), {})
-    any_ts = safe_float(any_rec.get("ts", 0)) if isinstance(any_rec, dict) else 0.0
-    if any_ts and now_ts - any_ts < PRO_AI_AUTOSIGNAL_SAME_SYMBOL_COOLDOWN_SEC:
-        return True
-
-    # Aynı coin + aynı yön için daha sert kilit.
-    rec = locks.get(ai_auto_lock_key(sym, direction), {})
+    lock_key = ai_auto_lock_key(symbol, direction)
+    rec = memory.setdefault("ai_auto_sent_lock", {}).get(lock_key, {})
     last_ts = safe_float(rec.get("ts", 0)) if isinstance(rec, dict) else 0.0
-    if last_ts and now_ts - last_ts < PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC:
+    if last_ts and time.time() - last_ts < PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC:
         return True
-
     # Aktif takipte aynı coin/yön varsa tekrar basma.
-    follow_key = f"{direction}:{sym}"
+    follow_key = f"{direction}:{normalize_symbol(symbol)}"
     follow = memory.get("follows", {}).get(follow_key, {})
     if isinstance(follow, dict) and follow and not bool(follow.get("done", False)):
         return True
@@ -3440,67 +3409,16 @@ def ai_auto_recently_locked(symbol: str, direction: str) -> bool:
 
 def mark_ai_auto_signal_lock(symbol: str, direction: str, payload: Optional[Dict[str, Any]] = None) -> None:
     direction = (direction or "").upper()
-    if direction not in ("LONG", "SHORT", "ANY"):
+    if direction not in ("LONG", "SHORT"):
         return
     sym = normalize_symbol(symbol)
-    rec = {
+    memory.setdefault("ai_auto_sent_lock", {})[ai_auto_lock_key(sym, direction)] = {
         "ts": time.time(),
         "symbol": sym,
         "direction": direction,
         "price": safe_float((payload or {}).get("price", 0)),
         "score": safe_float((payload or {}).get("score", 0)),
     }
-    memory.setdefault("ai_auto_sent_lock", {})[ai_auto_lock_key(sym, direction)] = rec
-    if direction in ("LONG", "SHORT"):
-        memory.setdefault("ai_auto_sent_lock", {})[ai_auto_lock_key(sym, "ANY")] = {**rec, "direction": "ANY"}
-
-
-def reserve_ai_auto_hard_lock(symbol: str, direction: str, payload: Optional[Dict[str, Any]] = None) -> bool:
-    """
-    AI otomatik sinyal için gönderimden önce sert kilit ayırır.
-    Aynı process içinde RAM kilidi, aynı dosya sisteminde ikinci process varsa dosya kilidi kullanır.
-    Ayrı Railway/Replit deploymentları aynı dosyayı paylaşmaz; o durumda eski instance manuel kapatılmalıdır.
-    """
-    direction = (direction or "").upper()
-    if direction not in ("LONG", "SHORT"):
-        return False
-    sym = normalize_symbol(symbol)
-
-    # Önce RAM kilidi.
-    if ai_auto_recently_locked(sym, direction):
-        return False
-
-    try:
-        import fcntl
-        lock_path = PRO_AI_AUTOSIGNAL_HARD_LOCK_FILE
-        os.makedirs(os.path.dirname(lock_path) or ".", exist_ok=True)
-        with open(lock_path, "a+", encoding="utf-8") as lf:
-            fcntl.flock(lf, fcntl.LOCK_EX)
-            # Dosyadan son kilitleri birleştir; ikinci process varsa tekrarı yakala.
-            try:
-                if os.path.exists(MEMORY_FILE):
-                    with open(MEMORY_FILE, "r", encoding="utf-8") as mf:
-                        disk_mem = json.load(mf)
-                    if isinstance(disk_mem, dict):
-                        for key in ("ai_auto_sent_lock", "daily_long_sent", "daily_short_sent", "follows"):
-                            if isinstance(disk_mem.get(key), dict):
-                                memory.setdefault(key, {}).update(disk_mem.get(key, {}))
-            except Exception:
-                pass
-
-            if ai_auto_recently_locked(sym, direction):
-                return False
-
-            mark_ai_auto_signal_lock(sym, direction, payload)
-            save_memory()
-            return True
-    except Exception as e:
-        logger.warning("AI otomatik hard lock alınamadı %s %s: %s", direction, sym, str(e)[:160])
-        if ai_auto_recently_locked(sym, direction):
-            return False
-        mark_ai_auto_signal_lock(sym, direction, payload)
-        save_memory()
-        return True
 
 
 def update_hot_memory(res: Dict[str, Any]) -> None:
@@ -3700,8 +3618,8 @@ DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").r
 
 PRO_AI_ENABLED = os.getenv("PRO_AI_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 PRO_AI_FAIL_OPEN = os.getenv("PRO_AI_FAIL_OPEN", "false").lower() in ("1", "true", "yes", "on")
-PRO_AI_MIN_CONFIDENCE = float(os.getenv("PRO_AI_MIN_CONFIDENCE", "72"))
-PRO_AI_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_MIN_SIGNAL_SCORE", "70"))
+PRO_AI_MIN_CONFIDENCE = float(os.getenv("PRO_AI_MIN_CONFIDENCE", "65"))
+PRO_AI_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_MIN_SIGNAL_SCORE", "55"))
 PRO_AI_TIMEOUT_SEC = float(os.getenv("PRO_AI_TIMEOUT_SEC", "7.5"))
 PRO_AI_MAX_CALLS_PER_MIN = int(os.getenv("PRO_AI_MAX_CALLS_PER_MIN", "22"))
 PRO_AI_CACHE_TTL_SEC = int(os.getenv("PRO_AI_CACHE_TTL_SEC", "90"))
@@ -3723,11 +3641,11 @@ PRO_AI_SIGNAL_NEWS_MAX_ITEMS = int(float(os.getenv("PRO_AI_SIGNAL_NEWS_MAX_ITEMS
 # AI raw action NO_SIGNAL dese bile; yön, skor, edge, risk ve akış birlikte güçlüyse
 # içeride LONG_AL / SHORT_AL'a çevrilir. Dışarıya yine sadece AL mesajı gider.
 PRO_AI_DIRECTION_AUTO_SIGNAL_ENABLED = os.getenv("PRO_AI_DIRECTION_AUTO_SIGNAL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-PRO_AI_DIRECTION_MIN_CONFIDENCE = float(os.getenv("PRO_AI_DIRECTION_MIN_CONFIDENCE", "72"))
-PRO_AI_DIRECTION_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_DIRECTION_MIN_SIGNAL_SCORE", "70"))
-PRO_AI_DIRECTION_MAX_RISK = float(os.getenv("PRO_AI_DIRECTION_MAX_RISK", "32"))
-PRO_AI_DIRECTION_MIN_EDGE = float(os.getenv("PRO_AI_DIRECTION_MIN_EDGE", "30"))
-PRO_AI_DIRECTION_MIN_FLOW_RATIO = float(os.getenv("PRO_AI_DIRECTION_MIN_FLOW_RATIO", "1.80"))
+PRO_AI_DIRECTION_MIN_CONFIDENCE = float(os.getenv("PRO_AI_DIRECTION_MIN_CONFIDENCE", "64"))
+PRO_AI_DIRECTION_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_DIRECTION_MIN_SIGNAL_SCORE", "54"))
+PRO_AI_DIRECTION_MAX_RISK = float(os.getenv("PRO_AI_DIRECTION_MAX_RISK", "58"))
+PRO_AI_DIRECTION_MIN_EDGE = float(os.getenv("PRO_AI_DIRECTION_MIN_EDGE", "8"))
+PRO_AI_DIRECTION_MIN_FLOW_RATIO = float(os.getenv("PRO_AI_DIRECTION_MIN_FLOW_RATIO", "1.25"))
 PRO_AI_DIRECTION_MAX_SHORT_DROP_FROM_PEAK_PCT = float(os.getenv("PRO_AI_DIRECTION_MAX_SHORT_DROP_FROM_PEAK_PCT", "2.20"))
 PRO_AI_DIRECTION_MAX_LONG_BOUNCE_FROM_LOW_PCT = float(os.getenv("PRO_AI_DIRECTION_MAX_LONG_BOUNCE_FROM_LOW_PCT", "2.20"))
 
@@ -5730,103 +5648,6 @@ def _calc_rr_from_levels(direction: str, entry: float, stop: float, tp1: float) 
     return round(reward / risk, 2)
 
 
-def validate_ai_auto_signal_quality(symbol: str, verdict: Dict[str, Any]) -> Tuple[bool, str]:
-    """
-    /zeka çıktısını otomatik AL mesajına çevirmeden önce son kalite kapısı.
-    Amaç: AI her dakika izlesin; fakat düşük hacim, yatay piyasa, yalnızca haber/flow oranı,
-    Whale Eye 0 ve zayıf ana yapı ile saçma LONG/SHORT AL basmasın.
-    """
-    if not PRO_AI_AUTOSIGNAL_STRICT_GATE_ENABLED:
-        return True, "strict_gate_disabled"
-    if not verdict or not verdict.get("send_signal"):
-        return False, "ai_send_signal_false"
-
-    action = str(verdict.get("action", "")).upper()
-    direction = _ai_verdict_action_to_direction(action)
-    if direction not in ("LONG", "SHORT"):
-        return False, f"invalid_action:{action}"
-
-    tech = verdict.get("tech") if isinstance(verdict.get("tech"), dict) else {}
-    flow = verdict.get("flow") if isinstance(verdict.get("flow"), dict) else {}
-    det = verdict.get("deterministic") if isinstance(verdict.get("deterministic"), dict) else {}
-
-    confidence = safe_float(verdict.get("confidence"), 0)
-    signal_score = safe_float(verdict.get("signal_score"), 0)
-    risk = safe_float(verdict.get("risk"), 100)
-    det_long = safe_float(det.get("long_score"), 0)
-    det_short = safe_float(det.get("short_score"), 0)
-    edge = safe_float(det.get("edge"), abs(det_long - det_short))
-    buy_sell = safe_float(flow.get("buy_sell_ratio"), 0)
-    sell_buy = safe_float(flow.get("sell_buy_ratio"), 0)
-    flow_dir = str(flow.get("flow_direction", "")).upper()
-
-    ema1 = str(tech.get("ema_state_1m", "")).upper()
-    ema5 = str(tech.get("ema_state_5m", "")).upper()
-    ema15 = str(tech.get("ema_state_15m", "")).upper()
-    market_structure = str(tech.get("market_structure", "")).upper()
-    vol1 = safe_float(tech.get("volume_1m_mult"), 0)
-    vol5 = safe_float(tech.get("volume_5m_mult"), 0)
-    atr_pct = safe_float(tech.get("atr_pct_1m"), 0)
-    rsi1 = safe_float(tech.get("rsi_1m"), 50)
-    rsi5 = safe_float(tech.get("rsi_5m"), 50)
-    change10 = safe_float(tech.get("change_10m"), 0)
-    change20 = safe_float(tech.get("change_20m"), 0)
-    change1h = safe_float(tech.get("change_1h"), 0)
-    drop_from_peak = safe_float(tech.get("drop_from_peak_pct"), 0)
-    near_peak = safe_float(tech.get("near_peak_pct"), 999)
-
-    # AI genel kalite eşiği. XRP/ADA gibi %65 güven + 60/65 skor artık otomatik AL basamaz.
-    if confidence < PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:
-        return False, f"confidence_low:{confidence:.1f}<{PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:.1f}"
-    if signal_score < PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:
-        return False, f"signal_score_low:{signal_score:.1f}<{PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:.1f}"
-    if risk > PRO_AI_AUTOSIGNAL_MAX_RISK:
-        return False, f"risk_high:{risk:.1f}>{PRO_AI_AUTOSIGNAL_MAX_RISK:.1f}"
-
-    if PRO_AI_AUTOSIGNAL_REQUIRE_REAL_VOLUME:
-        if vol1 < PRO_AI_AUTOSIGNAL_MIN_VOL_1M_MULT and vol5 < PRO_AI_AUTOSIGNAL_MIN_VOL_5M_MULT:
-            return False, f"volume_too_weak:1m={vol1:.2f},5m={vol5:.2f}"
-    if atr_pct and atr_pct < PRO_AI_AUTOSIGNAL_BLOCK_LOW_ATR_PCT and max(vol1, vol5) < 1.0:
-        return False, f"volatility_dead:atr={atr_pct:.3f},vol={max(vol1, vol5):.2f}"
-
-    if direction == "LONG":
-        if edge < PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE:
-            return False, f"long_edge_low:{edge:.1f}<{PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE:.1f}"
-        if det_long < det_short + PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE:
-            return False, f"long_numeric_not_clear:{det_long:.1f}/{det_short:.1f}"
-        if flow_dir != "ALIŞ_BASKIN" or buy_sell < PRO_AI_AUTOSIGNAL_LONG_MIN_BUY_SELL:
-            return False, f"long_flow_not_strong:{flow_dir},buy_sell={buy_sell:.2f}"
-        if "AŞAĞI" in ema1 or "AŞAĞI" in ema5:
-            return False, f"long_against_short_tf:{ema1}/{ema5}"
-        if PRO_AI_AUTOSIGNAL_REQUIRE_15M_CONTEXT and ("AŞAĞI" in ema15 or market_structure == "BEARISH"):
-            return False, f"long_15m_context_bad:{ema15}/{market_structure}"
-        if rsi1 > PRO_AI_AUTOSIGNAL_LONG_MAX_RSI_1M or rsi5 > PRO_AI_AUTOSIGNAL_LONG_MAX_RSI_5M:
-            return False, f"long_rsi_chase:{rsi1:.1f}/{rsi5:.1f}"
-        # Sadece haber/flow ile tepe kovalamayı engelle.
-        if change10 > 1.2 and change20 > 1.6 and near_peak <= 0.35 and vol5 < 1.0:
-            return False, f"long_chasing_near_peak:10m={change10:.2f},20m={change20:.2f},near={near_peak:.2f}"
-        return True, "long_strict_pass"
-
-    if direction == "SHORT":
-        if edge < PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE:
-            return False, f"short_edge_low:{edge:.1f}<{PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE:.1f}"
-        if det_short < det_long + PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE:
-            return False, f"short_numeric_not_clear:{det_long:.1f}/{det_short:.1f}"
-        if flow_dir != "SATIŞ_BASKIN" or sell_buy < PRO_AI_AUTOSIGNAL_SHORT_MIN_SELL_BUY:
-            return False, f"short_flow_not_strong:{flow_dir},sell_buy={sell_buy:.2f}"
-        if "YUKARI" in ema1 or "GÜÇLÜ_YUKARI" in ema5:
-            return False, f"short_against_short_tf:{ema1}/{ema5}"
-        if PRO_AI_AUTOSIGNAL_REQUIRE_15M_CONTEXT and "GÜÇLÜ_YUKARI" in ema15 and market_structure == "BULLISH":
-            return False, f"short_15m_still_strong:{ema15}/{market_structure}"
-        if rsi1 < PRO_AI_AUTOSIGNAL_SHORT_MIN_RSI_1M or rsi5 < PRO_AI_AUTOSIGNAL_SHORT_MIN_RSI_5M:
-            return False, f"short_late_oversold:{rsi1:.1f}/{rsi5:.1f}"
-        if drop_from_peak > 2.2 and abs(change10) > 0.8:
-            return False, f"short_late_drop:{drop_from_peak:.2f}"
-        return True, "short_strict_pass"
-
-    return False, "direction_not_supported"
-
-
 def build_ai_auto_signal_payload(symbol: str, verdict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """AI araştırma sonucunu normal bot sinyal payload'ına çevirir.
     Dışarıya ayrı AI etiketi basılmaz; mesaj yine LONG AL / SHORT AL formatındadır.
@@ -5956,26 +5777,11 @@ async def maybe_build_ai_auto_signal_for_symbol(symbol: str) -> Optional[Dict[st
         }
         if not verdict.get("send_signal"):
             return None
-
-        ok_gate, gate_reason = validate_ai_auto_signal_quality(symbol, verdict)
-        scan_mem[symbol]["strict_gate"] = gate_reason
-        if not ok_gate:
-            stats["professional_ai_quality_block"] = stats.get("professional_ai_quality_block", 0) + 1
-            logger.info("AI otomatik kalite kapısı blok %s: %s", symbol, gate_reason)
-            return None
-
         if direction and ai_auto_recently_locked(symbol, direction):
             stats["cooldown_reject"] = stats.get("cooldown_reject", 0) + 1
             return None
         payload = build_ai_auto_signal_payload(symbol, verdict)
         if payload:
-            # Gönderimden önce hard lock ayır; aynı coin tekrarını ve eşzamanlı process yarışını keser.
-            if not reserve_ai_auto_hard_lock(symbol, str(payload.get("direction", direction)), payload):
-                stats["cooldown_reject"] = stats.get("cooldown_reject", 0) + 1
-                logger.info("AI otomatik hard lock blok %s %s", payload.get("direction", direction), symbol)
-                return None
-            payload["ai_auto_pre_reserved"] = True
-            payload["ai_auto_gate_reason"] = gate_reason
             stats["professional_ai_auto_signal"] = stats.get("professional_ai_auto_signal", 0) + 1
         return payload
     except Exception as e:
@@ -6073,14 +5879,14 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
         # Sebep: Telegram mesajı gitmiş ama API cevabı/timeout yüzünden ok=False dönebilir;
         # bu durumda hafıza yazılmazsa aynı coin 2-3 dk içinde tekrar basar.
         if res.get("ai_auto_promoted"):
-            # maybe_build_ai_auto_signal_for_symbol içinde hard lock ayrılmışsa burada kendi kilidine takılmasın.
-            if not res.get("ai_auto_pre_reserved") and ai_auto_recently_locked(symbol, direction):
+            if ai_auto_recently_locked(symbol, direction):
                 stats["cooldown_reject"] = stats.get("cooldown_reject", 0) + 1
                 logger.info("AI OTOMATİK TEKRAR KİLİDİ %s %s", direction, symbol)
                 update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
                 return
-            if PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED and not res.get("ai_auto_pre_reserved"):
+            if PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED:
                 mark_ai_auto_signal_lock(symbol, direction, res)
+                set_daily_trade_sent(symbol, res)
                 save_memory()
 
         if direction == "SHORT":
