@@ -279,8 +279,7 @@ LONG_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("LONG_STRUCTURE_EXTRA_BUFFER_P
 # =========================================================
 # Ana bot SIGNAL üretmese bile AI yön/zeka motoru belirli aralıklarla coinleri tarar.
 # AI gerçekten LONG_AL/SHORT_AL üretirse dışarıya sadece normal AL mesajı gider.
-PRO_AI_AUTOSIGNAL_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-PRO_AI_AUTOSIGNAL_LOOP_ENABLED = PRO_AI_AUTOSIGNAL_ENABLED and os.getenv("PRO_AI_AUTOSIGNAL_LOOP_ENABLED", "true").lower() == "true"
+PRO_AI_AUTOSIGNAL_LOOP_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LOOP_ENABLED", "true").lower() == "true"
 PRO_AI_AUTOSIGNAL_INTERVAL_SEC = float(os.getenv("PRO_AI_AUTOSIGNAL_INTERVAL_SEC", "18"))
 PRO_AI_AUTOSIGNAL_BATCH_SIZE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_BATCH_SIZE", "2")))
 PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL = os.getenv("PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL", "true").lower() == "true"
@@ -292,23 +291,31 @@ PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTO
 # Telegram API cevap vermese bile mesaj gitmiş olabilir; bu yüzden AI sinyalinde gönderimden ÖNCE kilit atılır.
 PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED", "true").lower() == "true"
 
-# AI OTOMATİK FİNAL KAPI
-# Bu ayarlar artık gerçek gönderim kapısında okunur. Edge/risk/güven düşükse AL mesajı çıkmaz.
-# Ama normal ana bot motorları kapatılmaz; sadece zayıf AI otomatik köprü sinyali sessize alınır.
-PRO_AI_AUTOSIGNAL_HARD_GATE_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_HARD_GATE_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE", os.getenv("AI_AUTO_MIN_CONFIDENCE", "68")))
-PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE", os.getenv("AI_AUTO_MIN_SIGNAL_SCORE", "62")))
-PRO_AI_AUTOSIGNAL_MAX_RISK = float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_RISK", os.getenv("AI_AUTO_MAX_RISK", "38")))
-PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE", os.getenv("AI_AUTO_MIN_EDGE", "45")))
-PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE", os.getenv("AI_AUTO_MIN_EDGE", "45")))
+# =========================================================
+# AI OTOMATİK SİNYAL FINAL KAPI — GERÇEK GÖNDERİM FİLTRESİ
+# =========================================================
+# Bu ayarlar artık sadece yazıda kalmaz; LONG/SHORT AL gönderilmeden hemen önce okunur.
+PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE", "70"))
+PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE", "62"))
+PRO_AI_AUTOSIGNAL_MAX_RISK = float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_RISK", "35"))
+PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE", "45"))
+PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE", "40"))
 PRO_AI_AUTOSIGNAL_MIN_RR = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_RR", "1.05"))
-PRO_AI_AUTOSIGNAL_MIN_FLOW_RATIO = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_FLOW_RATIO", "1.45"))
-PRO_AI_AUTOSIGNAL_SHORT_OVERSOLD_RSI_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_OVERSOLD_RSI_BLOCK", "32"))
-PRO_AI_AUTOSIGNAL_LONG_OVERBOUGHT_RSI_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_OVERBOUGHT_RSI_BLOCK", "72"))
-PRO_AI_AUTOSIGNAL_OVERSOLD_STRONG_EDGE_ESCAPE = float(os.getenv("PRO_AI_AUTOSIGNAL_OVERSOLD_STRONG_EDGE_ESCAPE", "60"))
-PRO_AI_AUTOSIGNAL_BLOCK_WHALE_ZERO_WEAK_AI = os.getenv("PRO_AI_AUTOSIGNAL_BLOCK_WHALE_ZERO_WEAK_AI", "true").lower() in ("1", "true", "yes", "on")
-PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_CONFIDENCE = float(os.getenv("PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_CONFIDENCE", "72"))
-PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_EDGE", "50"))
+
+# SHORT için geç kalmış düşüş filtresi:
+# Bot tepede/ilk kırılımda short arasın; düşüş bittikten sonra short basmasın.
+PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK", "35"))
+PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK", "42"))
+PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK", "45"))
+PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT = os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT", "0.80"))
+PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT", "1.40"))
+
+# LONG için ters taraftaki aşırı ısınma filtresi.
+PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK", "74"))
+PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK", "72"))
 
 
 BLOCKED_COIN_BASE_KEYWORDS = tuple(
@@ -517,11 +524,10 @@ stats: Dict[str, Any] = {
     "cvd_diverge_long": 0,
     "whale_eye_block": 0,
     "whale_eye_pass": 0,
-    "professional_ai_auto_gate_pass": 0,
-    "professional_ai_auto_gate_block": 0,
-    "professional_ai_auto_edge_block": 0,
-    "professional_ai_auto_risk_block": 0,
-    "professional_ai_auto_rsi_block": 0,
+    "ai_auto_final_pass": 0,
+    "ai_auto_final_block": 0,
+    "ai_auto_late_short_block": 0,
+    "ai_auto_late_long_block": 0,
 }
 
 app = None
@@ -3334,7 +3340,8 @@ def build_heartbeat_message() -> str:
         f"📨 Sinyal: SHORT {total_short}/{DAILY_SHORT_TOTAL_LIMIT} | LONG {total_long}/{LONG_DAILY_TOTAL_LIMIT} | Toplam: {total_signal}\n"
         f"🎯 Başarı: TP={tp_count} Stop={stop_count} | %{winrate:.1f}\n"
         f"🐋 Whale Eye: OI={stats['oi_short_diverge']} Fund={stats['funding_short_bonus']} Spoof={stats['spoofing_detected']} CVD={stats['cvd_diverge_short']}\n"
-        f"🧠 AI Otomatik: {'AÇIK' if PRO_AI_AUTOSIGNAL_LOOP_ENABLED else 'KAPALI'} | AI sinyal: {stats.get('professional_ai_auto_signal', 0)} | AI sessiz: {stats.get('professional_ai_silent', 0)} | AI final blok: {stats.get('professional_ai_auto_gate_block', 0)} | AI final geçiş: {stats.get('professional_ai_auto_gate_pass', 0)}\n"
+        f"🧠 AI Otomatik: {'AÇIK' if PRO_AI_AUTOSIGNAL_LOOP_ENABLED else 'KAPALI'} | AI sinyal: {stats.get('professional_ai_auto_signal', 0)} | AI sessiz: {stats.get('professional_ai_silent', 0)}\n"
+        f"🧠 AI Final: geçiş={stats.get('ai_auto_final_pass', 0)} | blok={stats.get('ai_auto_final_block', 0)} | geç short={stats.get('ai_auto_late_short_block', 0)} | geç long={stats.get('ai_auto_late_long_block', 0)}\n"
         f"🛡️ Kalite Blok: {stats['quality_gate_block']} | Kırılım Geçen: {stats['trend_breakdown_pass']} | Kapanış Blok: {stats['close_confirm_block']}\n"
         f"🔧 API Fail: {stats['api_fail']} | Telegram Fail: {stats['telegram_fail']} | Analiz: {stats['analyzed']}\n"
         f"📌 Son Sinyal: {last_sig_txt}"
@@ -5674,121 +5681,137 @@ def _calc_rr_from_levels(direction: str, entry: float, stop: float, tp1: float) 
 
 
 
-def _ai_auto_directional_edge(direction: str, det: Dict[str, Any]) -> Tuple[float, float, float]:
-    """LONG için long-short, SHORT için short-long edge hesaplar."""
-    long_score = safe_float(det.get("long_score"), 0)
-    short_score = safe_float(det.get("short_score"), 0)
-    if str(direction).upper() == "LONG":
-        return round(long_score - short_score, 2), long_score, short_score
-    return round(short_score - long_score, 2), long_score, short_score
-
-
-def validate_ai_auto_final_gate(symbol: str, direction: str, verdict: Dict[str, Any], rr: float) -> Tuple[bool, str, Dict[str, Any]]:
+def _ai_auto_extract_numbers(payload: Dict[str, Any]) -> Dict[str, float]:
     """
-    AI otomatik köprü için gerçek final kapı.
-    Bu kapı WOO gibi edge 15.9 / risk 40 / RSI aşırı satım olan sinyali keser.
-    Botu tamamen susturmaz; normal ana motorlar çalışmaya devam eder.
+    AI otomatik payload içinden final kapı sayıları.
+    Tek kaynak yoksa professional_ai/deterministic/tech/flow alanlarından tamamlar.
     """
-    if not PRO_AI_AUTOSIGNAL_HARD_GATE_ENABLED:
-        return True, "AI otomatik final kapı kapalı.", {}
-
+    verdict = payload.get("professional_ai") if isinstance(payload.get("professional_ai"), dict) else {}
+    det = verdict.get("deterministic") if isinstance(verdict.get("deterministic"), dict) else {}
     tech = verdict.get("tech") if isinstance(verdict.get("tech"), dict) else {}
     flow = verdict.get("flow") if isinstance(verdict.get("flow"), dict) else {}
-    det = verdict.get("deterministic") if isinstance(verdict.get("deterministic"), dict) else {}
+    payload_flow = payload.get("trade_flow") if isinstance(payload.get("trade_flow"), dict) else {}
 
-    direction = str(direction or "").upper()
-    confidence = safe_float(verdict.get("confidence"), 0)
-    signal_score = safe_float(verdict.get("signal_score"), 0)
-    risk = safe_float(verdict.get("risk"), 100)
-    edge, long_score, short_score = _ai_auto_directional_edge(direction, det)
+    direction = str(payload.get("direction") or _ai_verdict_action_to_direction(str(verdict.get("action", ""))) or "SHORT").upper()
 
-    rsi1 = safe_float(tech.get("rsi_1m"), 50)
-    rsi5 = safe_float(tech.get("rsi_5m"), 50)
-    change_10m = safe_float(tech.get("change_10m"), 0)
-    change_20m = safe_float(tech.get("change_20m"), 0)
-    change_1h = safe_float(tech.get("change_1h"), 0)
-    buy_sell = safe_float(flow.get("buy_sell_ratio"), 0)
-    sell_buy = safe_float(flow.get("sell_buy_ratio"), 0)
+    long_score = safe_float(det.get("long_score"), 0)
+    short_score = safe_float(det.get("short_score"), 0)
+    raw_edge = safe_float(det.get("edge"), abs(long_score - short_score))
+    edge = raw_edge
+    if direction == "LONG" and long_score > 0:
+        edge = long_score - short_score
+    elif direction == "SHORT" and short_score > 0:
+        edge = short_score - long_score
 
-    min_edge = PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE if direction == "LONG" else PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE
-    flow_ratio = buy_sell if direction == "LONG" else sell_buy
-
-    gate_info = {
-        "confidence": confidence,
-        "signal_score": signal_score,
-        "risk": risk,
-        "edge": edge,
+    return {
+        "confidence": safe_float(payload.get("ai_confidence", verdict.get("confidence", 0)), 0),
+        "signal_score": safe_float(payload.get("ai_signal_score", verdict.get("signal_score", payload.get("breakdown_score", 0))), 0),
+        "risk": safe_float(payload.get("ai_risk", verdict.get("risk", 100)), 100),
+        "edge": safe_float(payload.get("ai_edge", edge), 0),
         "long_score": long_score,
         "short_score": short_score,
-        "min_edge": min_edge,
-        "rr": rr,
-        "rsi1": rsi1,
-        "rsi5": rsi5,
-        "flow_ratio": flow_ratio,
-        "change_10m": change_10m,
-        "change_20m": change_20m,
-        "change_1h": change_1h,
+        "rr": safe_float(payload.get("rr"), 0),
+        "rsi1": safe_float(payload.get("rsi1", tech.get("rsi_1m", 50)), 50),
+        "rsi5": safe_float(payload.get("rsi5", tech.get("rsi_5m", 50)), 50),
+        "rsi15": safe_float(payload.get("rsi15", tech.get("rsi_15m", 50)), 50),
+        "change_10m": safe_float(tech.get("change_10m", payload.get("pump_10m", 0)), 0),
+        "change_20m": safe_float(tech.get("change_20m", payload.get("pump_20m", 0)), 0),
+        "change_1h": safe_float(tech.get("change_1h", payload.get("pump_1h", 0)), 0),
+        "pump_context": safe_float(tech.get("pump_context", 0), 0),
+        "near_peak_pct": safe_float(tech.get("near_peak_pct", 999), 999),
+        "drop_from_peak_pct": safe_float(tech.get("drop_from_peak_pct", 999), 999),
+        "vol1": safe_float(payload.get("vol_ratio_1m", tech.get("volume_1m_mult", 0)), 0),
+        "vol5": safe_float(payload.get("vol_ratio_5m", tech.get("volume_5m_mult", 0)), 0),
+        "sell_buy": safe_float(flow.get("sell_buy_ratio", payload_flow.get("sell_to_buy", 0)), 0),
+        "buy_sell": safe_float(flow.get("buy_sell_ratio", payload_flow.get("buy_to_sell", 0)), 0),
     }
 
+
+def validate_ai_auto_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    AI otomatik sinyalin gerçek gönderim kapısı.
+    Amaç botu susturmak değil:
+      - kötü/çok geç sinyali keser,
+      - orta sinyali iç takipte bırakır,
+      - güçlü ve doğru yerdeki sinyali geçirir.
+
+    WOO tipi: edge düşük + risk yüksek + RSI aşırı satım -> BLOK.
+    LRC tipi: düşüş bittikten sonra düşük RSI ile SHORT -> BLOK.
+    Tepe bölgesi/ilk kırılım SHORT'ları korunur.
+    """
+    if not payload.get("ai_auto_promoted"):
+        return True, "AI otomatik sinyal değil."
+
+    direction = str(payload.get("direction", "SHORT")).upper()
+    n = _ai_auto_extract_numbers(payload)
+
+    conf = n["confidence"]
+    score = n["signal_score"]
+    risk = n["risk"]
+    edge = n["edge"]
+    rr = n["rr"]
+
+    min_edge = PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE if direction == "LONG" else PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE
+
     blocks: List[str] = []
-
-    if confidence < PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:
-        blocks.append(f"güven düşük {confidence:.1f}<{PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:.1f}")
-    if signal_score < PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:
-        blocks.append(f"AI skor düşük {signal_score:.1f}<{PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:.1f}")
+    if conf < PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:
+        blocks.append(f"güven düşük {conf:.1f}/{PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:.1f}")
+    if score < PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:
+        blocks.append(f"skor düşük {score:.1f}/{PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:.1f}")
     if risk > PRO_AI_AUTOSIGNAL_MAX_RISK:
-        stats["professional_ai_auto_risk_block"] = stats.get("professional_ai_auto_risk_block", 0) + 1
-        blocks.append(f"risk yüksek {risk:.1f}>{PRO_AI_AUTOSIGNAL_MAX_RISK:.1f}")
+        blocks.append(f"risk yüksek {risk:.1f}/{PRO_AI_AUTOSIGNAL_MAX_RISK:.1f}")
     if edge < min_edge:
-        stats["professional_ai_auto_edge_block"] = stats.get("professional_ai_auto_edge_block", 0) + 1
-        blocks.append(f"edge zayıf {edge:.1f}<{min_edge:.1f}")
+        blocks.append(f"edge düşük {edge:.1f}/{min_edge:.1f}")
     if rr < PRO_AI_AUTOSIGNAL_MIN_RR:
-        blocks.append(f"RR zayıf {rr:.2f}<{PRO_AI_AUTOSIGNAL_MIN_RR:.2f}")
-
-    # Whale Eye otomatik AI köprüsünde sıfırsa, AI tarafı biraz daha net olsun.
-    # Bu, Whale Eye gerçek sinyal motorunu susturmaz; sadece AI'nin tek başına düşük kalite AL basmasını keser.
-    if PRO_AI_AUTOSIGNAL_BLOCK_WHALE_ZERO_WEAK_AI:
-        if confidence < PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_CONFIDENCE and edge < PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_EDGE:
-            blocks.append(
-                f"Whale Eye 0 iken AI net değil: güven {confidence:.1f}/{PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_CONFIDENCE:.1f}, "
-                f"edge {edge:.1f}/{PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_EDGE:.1f}"
-            )
-
-    # WOO tipi: aşırı satımda zayıf edge ile SHORT kovalamayı kes.
-    if direction == "SHORT":
-        if rsi1 <= PRO_AI_AUTOSIGNAL_SHORT_OVERSOLD_RSI_BLOCK and edge < PRO_AI_AUTOSIGNAL_OVERSOLD_STRONG_EDGE_ESCAPE:
-            stats["professional_ai_auto_rsi_block"] = stats.get("professional_ai_auto_rsi_block", 0) + 1
-            blocks.append(
-                f"SHORT aşırı satım kovalanmaz: RSI1 {rsi1:.1f}, edge {edge:.1f}<{PRO_AI_AUTOSIGNAL_OVERSOLD_STRONG_EDGE_ESCAPE:.1f}"
-            )
-        if change_10m <= -0.30 and rsi1 < 35 and edge < PRO_AI_AUTOSIGNAL_OVERSOLD_STRONG_EDGE_ESCAPE:
-            blocks.append(f"düşüş başlamış/geç short riski: 10m %{change_10m:.2f}, RSI1 {rsi1:.1f}")
-
-    # Zayıf LONG: yön yukarı dese bile 20m/1h hâlâ zayıf ve edge sınırdaysa dış LONG AL yok.
-    if direction == "LONG":
-        if rsi1 >= PRO_AI_AUTOSIGNAL_LONG_OVERBOUGHT_RSI_BLOCK and edge < PRO_AI_AUTOSIGNAL_OVERSOLD_STRONG_EDGE_ESCAPE:
-            stats["professional_ai_auto_rsi_block"] = stats.get("professional_ai_auto_rsi_block", 0) + 1
-            blocks.append(
-                f"LONG aşırı alım kovalanmaz: RSI1 {rsi1:.1f}, edge {edge:.1f}<{PRO_AI_AUTOSIGNAL_OVERSOLD_STRONG_EDGE_ESCAPE:.1f}"
-            )
-        if change_20m < 0 and change_1h < 0.30 and edge < max(min_edge + 5.0, PRO_AI_AUTOSIGNAL_WHALE_ZERO_MIN_EDGE):
-            blocks.append(f"LONG momentum zayıf: 20m %{change_20m:.2f}, 1s %{change_1h:.2f}, edge {edge:.1f}")
-
-    # Flow tamamen zayıfsa ve edge tam güçlü değilse geçmesin.
-    if flow_ratio < PRO_AI_AUTOSIGNAL_MIN_FLOW_RATIO and edge < max(min_edge + 8.0, 55.0):
-        blocks.append(f"akış teyidi zayıf x{flow_ratio:.2f}<{PRO_AI_AUTOSIGNAL_MIN_FLOW_RATIO:.2f}")
+        blocks.append(f"RR düşük {rr:.2f}/{PRO_AI_AUTOSIGNAL_MIN_RR:.2f}")
 
     if blocks:
-        reason = "AI OTOMATİK FİNAL KAPI BLOK: " + " | ".join(blocks[:6])
-        stats["professional_ai_auto_gate_block"] = stats.get("professional_ai_auto_gate_block", 0) + 1
-        return False, reason, gate_info
+        return False, "AI OTOMATİK FİNAL KAPI BLOK: " + " | ".join(blocks)
 
-    pass_reason = (
-        f"AI OTOMATİK FİNAL KAPI GEÇTİ: güven {confidence:.1f}, skor {signal_score:.1f}, "
-        f"risk {risk:.1f}, edge {edge:.1f}/{min_edge:.1f}, akış x{flow_ratio:.2f}, RR {rr:.2f}"
+    if direction == "SHORT" and PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED:
+        # Düşüş bittikten sonra short istemiyoruz.
+        if n["rsi1"] <= PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK:
+            return False, (
+                f"AI OTOMATİK GEÇ SHORT BLOK: RSI1 aşırı satım {n['rsi1']:.1f}; "
+                "düşüş bittikten sonra SHORT AL yok."
+            )
+
+        if (
+            n["rsi5"] <= PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK
+            and n["rsi15"] <= PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK
+            and n["change_1h"] <= 0
+        ):
+            return False, (
+                f"AI OTOMATİK GEÇ SHORT BLOK: RSI5/15 zayıf {n['rsi5']:.1f}/{n['rsi15']:.1f}, "
+                f"1s hareket {n['change_1h']:.2f}; düşüşün gövdesi geçmiş."
+            )
+
+        has_top_context = (
+            n["pump_context"] >= PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT
+            or n["change_20m"] >= PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT
+            or n["rsi15"] >= 58
+            or n["near_peak_pct"] <= PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT
+        )
+        if PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT and not has_top_context:
+            return False, (
+                "AI OTOMATİK GEÇ SHORT BLOK: tepe/pump bağlamı yok; "
+                f"pump_context={n['pump_context']:.2f}, 20m={n['change_20m']:.2f}, "
+                f"near_peak={n['near_peak_pct']:.2f}, RSI15={n['rsi15']:.1f}."
+            )
+
+    if direction == "LONG" and PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED:
+        # Tepede kovalamayı keser; trend devam longları tamamen öldürmez.
+        if n["rsi1"] >= PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK and n["rsi5"] >= PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK:
+            return False, (
+                f"AI OTOMATİK GEÇ LONG BLOK: RSI1/5 aşırı ısınmış {n['rsi1']:.1f}/{n['rsi5']:.1f}; "
+                "tepe kovalanmaz."
+            )
+
+    return True, (
+        f"AI OTOMATİK FİNAL KAPI GEÇTİ: güven {conf:.1f}, skor {score:.1f}, "
+        f"risk {risk:.1f}, edge {edge:.1f}/{min_edge:.1f}, RR {rr:.2f}"
     )
-    stats["professional_ai_auto_gate_pass"] = stats.get("professional_ai_auto_gate_pass", 0) + 1
-    return True, pass_reason, gate_info
+
 
 
 def build_ai_auto_signal_payload(symbol: str, verdict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -5824,21 +5847,13 @@ def build_ai_auto_signal_payload(symbol: str, verdict: Dict[str, Any]) -> Option
     total_score = round(max(signal_score, signal_score + confidence * 0.25 - risk * 0.10), 2)
     quality_score = round(clamp((confidence + signal_score - risk) / 12.0, 0.0, 10.0), 2)
 
-    gate_ok, gate_reason, gate_info = validate_ai_auto_final_gate(symbol, direction, verdict, rr)
-    if not gate_ok:
-        verdict["send_signal"] = False
-        verdict["_ai_auto_gate_reason"] = gate_reason
-        logger.info("AI otomatik final kapı blok %s %s: %s", direction, symbol, gate_reason)
-        return None
-
     reasons = verdict.get("main_reasons") if isinstance(verdict.get("main_reasons"), list) else []
     reason_text = " | ".join(str(x) for x in reasons[:6]) if reasons else str(verdict.get("research_summary", "AI otomatik sinyal"))
-    display_edge = gate_info.get("edge", det.get("edge", 0))
     note = (
         f"AI OTOMATİK SİNYAL: {verdict.get('direction', '-')} | "
         f"Güven %{confidence:.1f} | Skor {signal_score:.1f} | Risk %{risk:.1f} | "
-        f"Long/Short {det.get('long_score', 0)}/{det.get('short_score', 0)} edge={display_edge} | "
-        f"{gate_reason} | {reason_text}"
+        f"Long/Short {det.get('long_score', 0)}/{det.get('short_score', 0)} edge={det.get('edge', 0)} | "
+        f"{reason_text}"
     )
 
     payload = {
@@ -5882,13 +5897,30 @@ def build_ai_auto_signal_payload(symbol: str, verdict: Dict[str, Any]) -> Option
         "whale_eye": {"enabled": True, "total_score": 0, "whale_confidence": "AI", "reason": "Profesyonel AI otomatik sinyal köprüsü"},
         "professional_ai": verdict,
         "professional_ai_checked": True,
-        "ai_auto_gate_reason": gate_reason,
-        "ai_auto_gate_info": gate_info,
         "ai_auto_promoted": True,
+        "ai_confidence": confidence,
+        "ai_signal_score": signal_score,
+        "ai_risk": risk,
+        "ai_edge": safe_float(det.get("edge"), abs(safe_float(det.get("long_score"), 0) - safe_float(det.get("short_score"), 0))),
+        "ai_long_score": safe_float(det.get("long_score"), 0),
+        "ai_short_score": safe_float(det.get("short_score"), 0),
         "invisible_class": "PROFESYONEL AI",
         "invisible_score": signal_score,
         "invisible_decision": "AI_OTOMATIK_SIGNAL",
     }
+
+    gate_ok, gate_reason = validate_ai_auto_final_gate(payload)
+    if not gate_ok:
+        stats["ai_auto_final_block"] = stats.get("ai_auto_final_block", 0) + 1
+        if direction == "SHORT" and "GEÇ SHORT" in gate_reason:
+            stats["ai_auto_late_short_block"] = stats.get("ai_auto_late_short_block", 0) + 1
+        if direction == "LONG" and "GEÇ LONG" in gate_reason:
+            stats["ai_auto_late_long_block"] = stats.get("ai_auto_late_long_block", 0) + 1
+        logger.info("AI otomatik final kapı blok %s %s: %s", direction, symbol, gate_reason)
+        return None
+
+    stats["ai_auto_final_pass"] = stats.get("ai_auto_final_pass", 0) + 1
+    payload["reason"] = f"{payload.get('reason', '')} | {gate_reason}"[:1400]
     return payload
 
 
@@ -5936,11 +5968,6 @@ async def maybe_build_ai_auto_signal_for_symbol(symbol: str) -> Optional[Dict[st
         payload = build_ai_auto_signal_payload(symbol, verdict)
         if payload:
             stats["professional_ai_auto_signal"] = stats.get("professional_ai_auto_signal", 0) + 1
-        else:
-            gate_reason = str(verdict.get("_ai_auto_gate_reason", ""))
-            if gate_reason:
-                scan_mem[symbol]["gate_block"] = gate_reason[:260]
-                logger.info("AI otomatik sinyal final kapıda kaldı %s: %s", symbol, gate_reason[:180])
         return payload
     except Exception as e:
         stats["professional_ai_error"] = stats.get("professional_ai_error", 0) + 1
@@ -6003,6 +6030,19 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
                 if not professional_ai_fail_open():
                     update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
                     return
+
+        if res.get("ai_auto_promoted"):
+            gate_ok, gate_reason = validate_ai_auto_final_gate(res)
+            if not gate_ok:
+                stats["ai_auto_final_block"] = stats.get("ai_auto_final_block", 0) + 1
+                if direction == "SHORT" and "GEÇ SHORT" in gate_reason:
+                    stats["ai_auto_late_short_block"] = stats.get("ai_auto_late_short_block", 0) + 1
+                if direction == "LONG" and "GEÇ LONG" in gate_reason:
+                    stats["ai_auto_late_long_block"] = stats.get("ai_auto_late_long_block", 0) + 1
+                logger.info("AI otomatik final kapı son kontrol blok %s %s: %s", direction, symbol, gate_reason)
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | {gate_reason}"})
+                return
+            res["reason"] = f"{res.get('reason', '')} | {gate_reason}"[:1400]
 
         if res.get("stage") != "SIGNAL" or str(res.get("signal_label", "")) != expected_label:
             logger.info("%s sinyali susturdu %s: %s", expected_label, symbol, res.get("reason", "-"))
