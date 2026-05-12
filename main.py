@@ -35,7 +35,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.0 WHALE EYE + AI OTOMATİK SİNYAL PRO FIX + SPAM KİLİDİ"
+VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE + V5.2.7.4 GERÇEK HAKEM PRO BİRLEŞİK"
 
 # =========================================================
 # ENV / AYARLAR
@@ -317,6 +317,93 @@ PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LO
 PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK", "74"))
 PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK", "72"))
 
+# =========================================================
+# V5.2.7.4 GERÇEK HAKEM PRO - BİRLEŞİK KATMAN
+# =========================================================
+# DeepSeek/harici AI yerine yerel hafıza + kural hakemi. Dışarı AL geldiyse ciddi olumsuz taraf kalmayacak.
+HASAN_AI_HAKEM_ENABLED = os.getenv("HASAN_AI_HAKEM_ENABLED", "true").lower() == "true"
+HASAN_AI_PRO_MODE_ENABLED = os.getenv("HASAN_AI_PRO_MODE_ENABLED", "true").lower() == "true"
+HASAN_AI_PRO_ZERO_NEGATIVE_SIGNAL = os.getenv("HASAN_AI_PRO_ZERO_NEGATIVE_SIGNAL", "true").lower() == "true"
+HASAN_AI_PRO_BLOCK_RISKY_CLOSE = os.getenv("HASAN_AI_PRO_BLOCK_RISKY_CLOSE", "true").lower() == "true"
+HASAN_AI_PRO_MIN_15M_SHORT_SCORE = float(os.getenv("HASAN_AI_PRO_MIN_15M_SHORT_SCORE", "1.20"))
+HASAN_AI_PRO_MIN_15M_LONG_SCORE = float(os.getenv("HASAN_AI_PRO_MIN_15M_LONG_SCORE", "0.80"))
+HASAN_AI_PRO_MIN_ICT_EDGE = float(os.getenv("HASAN_AI_PRO_MIN_ICT_EDGE", "1.50"))
+HASAN_AI_PRO_MIN_QUALITY = float(os.getenv("HASAN_AI_PRO_MIN_QUALITY", "6.0"))
+HASAN_AI_PRO_MIN_RR = float(os.getenv("HASAN_AI_PRO_MIN_RR", "1.05"))
+HASAN_AI_PRO_BAD_PATTERN_SCORE = float(os.getenv("HASAN_AI_PRO_BAD_PATTERN_SCORE", "2.40"))
+HASAN_AI_PRO_GOOD_PATTERN_SCORE = float(os.getenv("HASAN_AI_PRO_GOOD_PATTERN_SCORE", "1.00"))
+HASAN_AI_PRO_MEMORY_BLOCK_SCORE = float(os.getenv("HASAN_AI_PRO_MEMORY_BLOCK_SCORE", "3.00"))
+HASAN_AI_PRO_HARD_BLOCK_SCORE = float(os.getenv("HASAN_AI_PRO_HARD_BLOCK_SCORE", "4.50"))
+HASAN_AI_PRO_MIN_STRICT_SAMPLES = int(float(os.getenv("HASAN_AI_PRO_MIN_STRICT_SAMPLES", "3")))
+HASAN_AI_PRO_STOP_RATE_BLOCK = float(os.getenv("HASAN_AI_PRO_STOP_RATE_BLOCK", "0.58"))
+HASAN_AI_PRO_TP2PLUS_GOOD_RATE = float(os.getenv("HASAN_AI_PRO_TP2PLUS_GOOD_RATE", "0.45"))
+HASAN_AI_PRO_STORE_MAX_POTENTIAL = os.getenv("HASAN_AI_PRO_STORE_MAX_POTENTIAL", "true").lower() == "true"
+HASAN_AI_MIN_COIN_SAMPLES = int(float(os.getenv("HASAN_AI_MIN_COIN_SAMPLES", "3")))
+HASAN_AI_BAD_COIN_STOP_RATE = float(os.getenv("HASAN_AI_BAD_COIN_STOP_RATE", "0.67"))
+HASAN_AI_MAX_RECENT_STOPS = int(float(os.getenv("HASAN_AI_MAX_RECENT_STOPS", "2")))
+HASAN_AI_RECENT_WINDOW = int(float(os.getenv("HASAN_AI_RECENT_WINDOW", "20")))
+# Kullanıcı tercihi: TP1'de tamamı kapatılabilir; ama sinyal kalitesi için TP2/TP3 potansiyeli ayrıca raporlanır.
+FOLLOWUP_CLOSE_ALL_AT_TP1 = os.getenv("FOLLOWUP_CLOSE_ALL_AT_TP1", "true").lower() == "true"
+# Net AL kuralı: riskli/çelişkili mesaj dışarı çıkmasın.
+STRICT_CLEAN_SIGNAL_ONLY = os.getenv("STRICT_CLEAN_SIGNAL_ONLY", "true").lower() == "true"
+STRICT_BLOCK_RISKY_CLOSE_FOR_SIGNAL = os.getenv("STRICT_BLOCK_RISKY_CLOSE_FOR_SIGNAL", "true").lower() == "true"
+STRICT_BLOCK_NEGATIVE_15M_SCORE = os.getenv("STRICT_BLOCK_NEGATIVE_15M_SCORE", "true").lower() == "true"
+STRICT_MIN_SHORT_ICT_EDGE = float(os.getenv("STRICT_MIN_SHORT_ICT_EDGE", "1.50"))
+STRICT_MIN_LONG_ICT_EDGE = float(os.getenv("STRICT_MIN_LONG_ICT_EDGE", "1.50"))
+
+
+# =========================================================
+# PRO PLUS OPSİYONEL MODÜLLER
+# Rejim + makro korelasyon + destek/direnç + pozisyon yönetimi + backtest
+# =========================================================
+MARKET_REGIME_ENGINE_ENABLED = os.getenv("MARKET_REGIME_ENGINE_ENABLED", "true").lower() == "true"
+REGIME_BLOCK_COUNTER_TREND = os.getenv("REGIME_BLOCK_COUNTER_TREND", "true").lower() == "true"
+REGIME_TREND_EMA_GAP_PCT = float(os.getenv("REGIME_TREND_EMA_GAP_PCT", "0.35"))
+REGIME_BREAKOUT_ATR_MULT = float(os.getenv("REGIME_BREAKOUT_ATR_MULT", "1.35"))
+REGIME_RANGE_MAX_WIDTH_PCT = float(os.getenv("REGIME_RANGE_MAX_WIDTH_PCT", "1.35"))
+REGIME_MIN_CONFIRM_SCORE = float(os.getenv("REGIME_MIN_CONFIRM_SCORE", "2.0"))
+
+MACRO_CORRELATION_ENGINE_ENABLED = os.getenv("MACRO_CORRELATION_ENGINE_ENABLED", "true").lower() == "true"
+MACRO_SYMBOLS = [x.strip().upper() for x in os.getenv("MACRO_SYMBOLS", "BTC-USDT-SWAP,ETH-USDT-SWAP").split(",") if x.strip()]
+MACRO_BTC_DROP_BLOCK_LONG_PCT = float(os.getenv("MACRO_BTC_DROP_BLOCK_LONG_PCT", "0.45"))
+MACRO_BTC_PUMP_BLOCK_SHORT_PCT = float(os.getenv("MACRO_BTC_PUMP_BLOCK_SHORT_PCT", "0.55"))
+MACRO_BTC_FAST_MOVE_5M_PCT = float(os.getenv("MACRO_BTC_FAST_MOVE_5M_PCT", "0.28"))
+MACRO_HIGH_CORR_MIN = float(os.getenv("MACRO_HIGH_CORR_MIN", "0.55"))
+MACRO_BLOCK_IF_HIGH_CORR_COUNTER = os.getenv("MACRO_BLOCK_IF_HIGH_CORR_COUNTER", "true").lower() == "true"
+
+SR_ENGINE_ENABLED = os.getenv("SR_ENGINE_ENABLED", "true").lower() == "true"
+SR_PIVOT_LEFT = int(float(os.getenv("SR_PIVOT_LEFT", "2")))
+SR_PIVOT_RIGHT = int(float(os.getenv("SR_PIVOT_RIGHT", "2")))
+SR_LOOKBACK_1M = int(float(os.getenv("SR_LOOKBACK_1M", "90")))
+SR_LOOKBACK_5M = int(float(os.getenv("SR_LOOKBACK_5M", "72")))
+SR_CLUSTER_PCT = float(os.getenv("SR_CLUSTER_PCT", "0.18"))
+SR_NEAR_LEVEL_PCT = float(os.getenv("SR_NEAR_LEVEL_PCT", "0.45"))
+SR_TP1_ROOM_BUFFER_PCT = float(os.getenv("SR_TP1_ROOM_BUFFER_PCT", "0.18"))
+SR_STOP_BEHIND_LEVEL_PCT = float(os.getenv("SR_STOP_BEHIND_LEVEL_PCT", "0.08"))
+SR_MIN_LEVEL_SCORE = float(os.getenv("SR_MIN_LEVEL_SCORE", "2.0"))
+SR_BLOCK_IF_TP1_WALL = os.getenv("SR_BLOCK_IF_TP1_WALL", "true").lower() == "true"
+SR_BLOCK_WEAK_ZONE_LOW_FLOW = os.getenv("SR_BLOCK_WEAK_ZONE_LOW_FLOW", "true").lower() == "true"
+
+POSITION_MANAGER_ENABLED = os.getenv("POSITION_MANAGER_ENABLED", "true").lower() == "true"
+POSITION_MANAGER_CHECK_INTERVAL_SEC = int(float(os.getenv("POSITION_MANAGER_CHECK_INTERVAL_SEC", "90")))
+POSITION_PM_MIN_AGE_SEC = int(float(os.getenv("POSITION_PM_MIN_AGE_SEC", "90")))
+POSITION_TP1_PARTIAL_PCT = float(os.getenv("POSITION_TP1_PARTIAL_PCT", "50"))
+POSITION_TP2_PARTIAL_PCT = float(os.getenv("POSITION_TP2_PARTIAL_PCT", "30"))
+POSITION_MOVE_STOP_BE_AFTER_TP1 = os.getenv("POSITION_MOVE_STOP_BE_AFTER_TP1", "true").lower() == "true"
+POSITION_TRAILING_ENABLED = os.getenv("POSITION_TRAILING_ENABLED", "true").lower() == "true"
+POSITION_TRAIL_ATR_MULT = float(os.getenv("POSITION_TRAIL_ATR_MULT", "1.20"))
+POSITION_TRAIL_AFTER_PROFIT_PCT = float(os.getenv("POSITION_TRAIL_AFTER_PROFIT_PCT", "0.55"))
+POSITION_SEND_PM_ALERTS = os.getenv("POSITION_SEND_PM_ALERTS", "true").lower() == "true"
+
+BACKTEST_ENGINE_ENABLED = os.getenv("BACKTEST_ENGINE_ENABLED", "true").lower() == "true"
+BACKTEST_DEFAULT_BARS = int(float(os.getenv("BACKTEST_DEFAULT_BARS", "240")))
+BACKTEST_FORWARD_BARS = int(float(os.getenv("BACKTEST_FORWARD_BARS", "45")))
+BACKTEST_MIN_SIGNAL_GAP_BARS = int(float(os.getenv("BACKTEST_MIN_SIGNAL_GAP_BARS", "12")))
+BACKTEST_RISK_STOP_PCT = float(os.getenv("BACKTEST_RISK_STOP_PCT", "0.80"))
+BACKTEST_TP1_PCT = float(os.getenv("BACKTEST_TP1_PCT", "1.00"))
+BACKTEST_TP2_PCT = float(os.getenv("BACKTEST_TP2_PCT", "1.50"))
+BACKTEST_TP3_PCT = float(os.getenv("BACKTEST_TP3_PCT", "2.00"))
+
 
 BLOCKED_COIN_BASE_KEYWORDS = tuple(
     x.strip().upper()
@@ -528,6 +615,17 @@ stats: Dict[str, Any] = {
     "ai_auto_final_block": 0,
     "ai_auto_late_short_block": 0,
     "ai_auto_late_long_block": 0,
+    "hasan_ai_pass": 0,
+    "hasan_ai_block": 0,
+    "hasan_ai_learn": 0,
+    "regime_pass": 0,
+    "regime_block": 0,
+    "macro_pass": 0,
+    "macro_block": 0,
+    "sr_pass": 0,
+    "sr_block": 0,
+    "pm_alert_sent": 0,
+    "backtest_run": 0,
 }
 
 app = None
@@ -609,10 +707,14 @@ def ensure_memory_shape() -> None:
     memory.setdefault("daily_short_sent", {})
     memory.setdefault("daily_long_sent", {})
     memory.setdefault("ai_auto_sent_lock", {})
+    memory.setdefault("hasan_ai", {"patterns": {}, "coins": {}, "recent": [], "potential_patterns": {}})
     memory.setdefault("last_signal_ts", 0.0)
     memory.setdefault("last_signal_attempt_ts", 0.0)
     memory.setdefault("last_diag_ts", 0.0)
     memory.setdefault("ai_auto_scan", {})
+    memory.setdefault("position_manager", {})
+    memory.setdefault("backtests", {})
+    memory.setdefault("market_context", {})
 
 
 def load_memory() -> None:
@@ -2717,6 +2819,9 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
     breakdown = short_breakdown_confirmation(k1, k5)
     breakdown_score = safe_float(breakdown.get("score", 0))
     ict_context = build_ict_zone_context(k1, k5, k15, last_price)
+    market_regime = build_market_regime_context(k1, k5, k15, last_price)
+    support_resistance = build_support_resistance_context(k1, k5, k15, last_price, "SHORT")
+    macro_context = await build_macro_correlation_context(symbol, k5, "SHORT")
 
     # =========================================================
     # V6 WHALE EYE - BURADA ÇAĞIRILIYOR
@@ -2892,6 +2997,9 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
         "reason": " | ".join(reasons[:15]) if reasons else "Sebep yok",
         "ict": ict_context,
         "whale_eye": whale_eye,  # V6 YENI
+        "market_regime": market_regime,
+        "macro": macro_context,
+        "support_resistance": support_resistance,
     }
 
     if (strong_breakout_continue or trend_guard.get("blocked")) and whale_confidence not in ("ÇOK_YÜKSEK", "YÜKSEK"):
@@ -2922,6 +3030,7 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
             stats["quality_gate_block"] += 1
             final_payload["reason"] = f"{final_payload['reason']} | Kalite kapısı: {q_reason}"
 
+    final_payload["position_plan"] = build_position_plan({**final_payload, "direction": "SHORT"})
     final_payload = enforce_single_short_al_rules(final_payload)
     return final_payload
 
@@ -2970,6 +3079,9 @@ async def analyze_long_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]])
     ict = build_ict_zone_context(k1, k5, k15, last_price)
     if not ict.get("enabled") or safe_float(ict.get("range_pct", 0)) < ICT_MIN_RANGE_PCT:
         return None
+    market_regime = build_market_regime_context(k1, k5, k15, last_price)
+    support_resistance = build_support_resistance_context(k1, k5, k15, last_price, "LONG")
+    macro_context = await build_macro_correlation_context(symbol, k5, "LONG")
 
     drop_20m = max(0.0, abs(pct_change(max(c1[-21:-1]), last_price))) if len(c1) >= 22 and last_price < max(c1[-21:-1]) else 0.0
     drop_1h = max(0.0, abs(pct_change(max(c5[-13:-1]), last_price))) if len(c5) >= 14 and last_price < max(c5[-13:-1]) else 0.0
@@ -3118,11 +3230,842 @@ async def analyze_long_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]])
         "ict": ict, "long_close_gate": close_gate,
         "trade_flow": flow, "orderbook": book,
         "whale_eye": whale_eye,
+        "market_regime": market_regime,
+        "macro": macro_context,
+        "support_resistance": support_resistance,
         "invisible_class": "ICT LONG", "invisible_score": round(quality_score * 12.0, 1),
         "invisible_decision": "LONG_AL_SERBEST" if stage == "SIGNAL" else "LONG_TAKIP",
     }
+    payload["position_plan"] = build_position_plan(payload)
     return enforce_single_long_al_rules(payload)
 
+
+
+def _bucket_float(v: float, cuts: List[float], names: List[str]) -> str:
+    try:
+        v = float(v)
+    except Exception:
+        return "NA"
+    for i, cut in enumerate(cuts):
+        if v < cut:
+            return names[i]
+    return names[-1]
+
+
+def _tp_rank(level: str) -> int:
+    return {"STOP": -1, "NÖTR": 0, "NO_HIT": 0, "YOK": 0, "TP1": 1, "TP2": 2, "TP3": 3}.get(str(level).upper(), 0)
+
+
+def hasan_ai_memory() -> Dict[str, Any]:
+    ensure_memory_shape()
+    ai = memory.setdefault("hasan_ai", {"patterns": {}, "coins": {}, "recent": [], "potential_patterns": {}})
+    ai.setdefault("patterns", {})
+    ai.setdefault("coins", {})
+    ai.setdefault("recent", [])
+    ai.setdefault("potential_patterns", {})
+    return ai
+
+
+def hasan_ai_signal_features(payload: Dict[str, Any]) -> Dict[str, Any]:
+    direction = str(payload.get("direction", "SHORT")).upper()
+    symbol = normalize_symbol(str(payload.get("symbol", "")))
+    base = coin_base_from_symbol(symbol)
+    ict = payload.get("ict") if isinstance(payload.get("ict"), dict) else {}
+    close_gate = payload.get("close_confirm_gate") if isinstance(payload.get("close_confirm_gate"), dict) else payload.get("long_close_gate") if isinstance(payload.get("long_close_gate"), dict) else {}
+    inv = payload.get("invisible_face") if isinstance(payload.get("invisible_face"), dict) else {}
+    flow = payload.get("trade_flow") if isinstance(payload.get("trade_flow"), dict) else {}
+    whale = payload.get("whale_eye") if isinstance(payload.get("whale_eye"), dict) else {}
+    prof = payload.get("professional_ai") if isinstance(payload.get("professional_ai"), dict) else {}
+
+    short_score = safe_float(ict.get("short_pro_score", payload.get("ai_short_score", 0)), 0)
+    long_score = safe_float(ict.get("long_pro_score", payload.get("ai_long_score", 0)), 0)
+    edge = short_score - long_score if direction == "SHORT" else long_score - short_score
+    pump10 = safe_float(payload.get("pump_10m", 0), 0)
+    pump20 = safe_float(payload.get("pump_20m", 0), 0)
+    pump1h = safe_float(payload.get("pump_1h", 0), 0)
+    pump_ref = max(abs(pump20), abs(pump1h))
+    vol1 = safe_float(payload.get("vol_ratio_1m", 0), 0)
+    vol5 = safe_float(payload.get("vol_ratio_5m", 0), 0)
+    vol_ref = max(vol1, vol5)
+    rr = safe_float(payload.get("rr", 0), 0)
+    quality = safe_float(payload.get("quality_score", 0), 0)
+    breakdown = safe_float(payload.get("breakdown_score", 0), 0)
+    score5 = safe_float(close_gate.get("score5", 0), 0)
+    score15 = safe_float(close_gate.get("score15", 0), 0)
+    close_class = str(close_gate.get("class", "NA")).upper()
+    buy_to_sell = safe_float(flow.get("buy_to_sell", 0), 0)
+    sell_to_buy = safe_float(flow.get("sell_to_buy", 0), 0)
+    ai_risk = safe_float(payload.get("ai_risk", prof.get("risk", 0)), 0)
+    ai_confidence = safe_float(payload.get("ai_confidence", prof.get("confidence", 0)), 0)
+    whale_score = safe_float(whale.get("total_score", 0), 0)
+    whale_conf = str(whale.get("whale_confidence", "NA")).upper()
+
+    return {
+        "symbol": symbol,
+        "base": base,
+        "direction": direction,
+        "is_ai_auto": bool(payload.get("ai_auto_promoted")),
+        "ict_enabled": bool(ict.get("enabled")),
+        "ict_bias": str(ict.get("structure_bias", "NA")).upper(),
+        "short_ict": round(short_score, 2),
+        "long_ict": round(long_score, 2),
+        "ict_edge": round(edge, 2),
+        "ict_edge_bucket": _bucket_float(edge, [-1.0, 0.0, 1.5, 3.0, 6.0], ["TERS", "ZAYIF", "SINIRDA", "IYI", "GUCLU", "COK_GUCLU"]),
+        "close_class": close_class,
+        "score5": round(score5, 2),
+        "score15": round(score15, 2),
+        "score15_bucket": _bucket_float(score15, [0, 1.2, 2.6, 4.0, 6.0], ["NEGATIF", "COK_ZAYIF", "ZAYIF", "ORTA", "IYI", "GUCLU"]),
+        "inv_class": str(payload.get("invisible_class", inv.get("class", "NA"))).upper(),
+        "inv_score": round(safe_float(payload.get("invisible_score", inv.get("score", 0)), 0), 2),
+        "inv_decision": str(payload.get("invisible_decision", inv.get("decision", "NA"))).upper(),
+        "top_early": bool(payload.get("top_early_short") or inv.get("top_early_short")),
+        "top_exit_score": round(safe_float(payload.get("top_exit_score", inv.get("top_exit_score", 0)), 0), 2),
+        "peak_age": int(safe_float(payload.get("peak_age_candles", inv.get("peak_age_candles", 999)), 999)),
+        "drop_from_peak": round(safe_float(inv.get("drop_from_peak_pct", payload.get("drop_from_peak_pct", 999)), 999), 2),
+        "pump10": round(pump10, 2),
+        "pump20": round(pump20, 2),
+        "pump1h": round(pump1h, 2),
+        "pump_bucket": _bucket_float(pump_ref, [0.5, 1.2, 2.5, 5.0], ["YOK", "AZ", "ORTA", "GUCLU", "COK_GUCLU"]),
+        "rsi1": round(safe_float(payload.get("rsi1", 50), 50), 2),
+        "rsi5": round(safe_float(payload.get("rsi5", 50), 50), 2),
+        "rsi15": round(safe_float(payload.get("rsi15", 50), 50), 2),
+        "vol1": round(vol1, 2),
+        "vol5": round(vol5, 2),
+        "vol_bucket": _bucket_float(vol_ref, [0.35, 0.8, 1.5, 3.0], ["OLU", "ZAYIF", "NORMAL", "GUCLU", "COK_GUCLU"]),
+        "flow_buy_to_sell": round(buy_to_sell, 3),
+        "flow_sell_to_buy": round(sell_to_buy, 3),
+        "flow_reliable": bool(payload.get("flow_reliable", True)),
+        "rr": round(rr, 2),
+        "rr_bucket": _bucket_float(rr, [0.8, 1.05, 1.4, 2.0], ["KOTU", "SINIRDA", "NORMAL", "IYI", "COK_IYI"]),
+        "quality": round(quality, 2),
+        "breakdown": round(breakdown, 2),
+        "bos_down": bool(ict.get("bos_down") or ict.get("choch_down") or ict.get("mss_down")),
+        "bos_up": bool(ict.get("bos_up") or ict.get("choch_up") or ict.get("mss_up")),
+        "bearish_fvg": bool(ict.get("bearish_fvg_active")),
+        "bullish_fvg": bool(ict.get("bullish_fvg_active")),
+        "bearish_ob": bool(ict.get("bearish_ob_near")),
+        "bullish_ob": bool(ict.get("bullish_ob_near")),
+        "whale_score": whale_score,
+        "whale_conf": whale_conf,
+        "ai_risk": round(ai_risk, 2),
+        "ai_confidence": round(ai_confidence, 2),
+    }
+
+
+def hasan_ai_pattern_keys(features: Dict[str, Any]) -> List[str]:
+    d = features.get("direction", "NA")
+    return [
+        f"DIR={d}|ICT={features.get('ict_bias')}|EDGE={features.get('ict_edge_bucket')}|CLOSE={features.get('close_class')}|15M={features.get('score15_bucket')}",
+        f"DIR={d}|INV={features.get('inv_class')}|PUMP={features.get('pump_bucket')}|VOL={features.get('vol_bucket')}|RR={features.get('rr_bucket')}",
+        f"DIR={d}|COIN={features.get('base')}",
+        f"DIR={d}|ICT={features.get('ict_bias')}|BOSD={features.get('bos_down')}|BOSU={features.get('bos_up')}",
+        f"DIR={d}|EDGE={features.get('ict_edge_bucket')}|QUAL={_bucket_float(safe_float(features.get('quality', 0)), [4, 6, 7.5, 9], ['COK_ZAYIF','ZAYIF','ORTA','IYI','COK_IYI'])}|BREAK={_bucket_float(safe_float(features.get('breakdown', 0)), [3, 7.2, 10, 15], ['YOK','ZAYIF','ORTA','IYI','GUCLU'])}",
+    ]
+
+
+def _hasan_ai_stats_summary(rec: Dict[str, Any]) -> Tuple[int, float, float]:
+    total = int(safe_float(rec.get("total", 0), 0))
+    if total <= 0:
+        return 0, 0.0, 0.0
+    stops = int(safe_float(rec.get("STOP", 0), 0))
+    wins = int(safe_float(rec.get("TP1", 0), 0)) + int(safe_float(rec.get("TP2", 0), 0)) + int(safe_float(rec.get("TP3", 0), 0))
+    return total, stops / total, wins / total
+
+
+def _hasan_ai_tp2plus_rate(rec: Dict[str, Any]) -> float:
+    total = int(safe_float(rec.get("total", 0), 0))
+    if total <= 0:
+        return 0.0
+    return (int(safe_float(rec.get("TP2", 0), 0)) + int(safe_float(rec.get("TP3", 0), 0))) / total
+
+
+def hasan_ai_rule_audit(features: Dict[str, Any]) -> Tuple[List[str], List[str], float, float]:
+    hard: List[str] = []
+    soft: List[str] = []
+    risk = 0.0
+    good = 0.0
+    d = str(features.get("direction", "SHORT")).upper()
+    bias = str(features.get("ict_bias", "NA")).upper()
+    edge = safe_float(features.get("ict_edge", 0), 0)
+    close_class = str(features.get("close_class", "NA")).upper()
+    score15 = safe_float(features.get("score15", 0), 0)
+    quality = safe_float(features.get("quality", 0), 0)
+    rr = safe_float(features.get("rr", 0), 0)
+    vol1 = safe_float(features.get("vol1", 0), 0)
+    vol5 = safe_float(features.get("vol5", 0), 0)
+    breakdown = safe_float(features.get("breakdown", 0), 0)
+    is_ai_auto = bool(features.get("is_ai_auto"))
+
+    # AI otomatik sinyal final gate'ten geçmiş olsa bile ciddi olumsuzları tekrar kontrol et.
+    if HASAN_AI_PRO_ZERO_NEGATIVE_SIGNAL:
+        if close_class in ("RISKY", "WAIT") and HASAN_AI_PRO_BLOCK_RISKY_CLOSE:
+            hard.append(f"kapanış {close_class}")
+        if close_class != "NA" and STRICT_BLOCK_NEGATIVE_15M_SCORE and score15 < 0:
+            hard.append(f"15m skor negatif {score15:.1f}")
+
+    if rr < HASAN_AI_PRO_MIN_RR:
+        hard.append(f"RR düşük {rr:.2f}")
+    # AI auto payload'larında kalite skoru düşük gelebilir; orada risk/confidence ana ölçüdür.
+    if not is_ai_auto and quality > 0 and quality < HASAN_AI_PRO_MIN_QUALITY:
+        hard.append(f"kalite düşük {quality:.1f}")
+    if is_ai_auto:
+        if safe_float(features.get("ai_risk", 0), 0) > PRO_AI_AUTOSIGNAL_MAX_RISK:
+            hard.append(f"AI risk yüksek {features.get('ai_risk')}")
+        if safe_float(features.get("ai_confidence", 0), 0) < PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:
+            hard.append(f"AI güven düşük {features.get('ai_confidence')}")
+
+    if features.get("ict_enabled") or safe_float(features.get("short_ict", 0)) or safe_float(features.get("long_ict", 0)):
+        if d == "SHORT":
+            if edge < HASAN_AI_PRO_MIN_ICT_EDGE:
+                hard.append(f"SHORT ICT üstünlüğü zayıf {edge:.1f}")
+            if bias == "BULLISH" and not features.get("bos_down"):
+                hard.append("BULLISH yapı + BOS/CHOCH/MSS aşağı yok")
+            if safe_float(features.get("long_ict", 0)) >= safe_float(features.get("short_ict", 0)):
+                hard.append("LONG ICT shorttan güçlü/eşit")
+            if max(safe_float(features.get("pump20", 0)), safe_float(features.get("pump1h", 0))) < 0.65 and not features.get("top_early") and features.get("whale_conf") not in ("YÜKSEK", "ÇOK_YÜKSEK", "AI"):
+                soft.append("SHORT pump/tepe bağlamı zayıf")
+                risk += 1.2
+        else:
+            if edge < HASAN_AI_PRO_MIN_ICT_EDGE:
+                hard.append(f"LONG ICT üstünlüğü zayıf {edge:.1f}")
+            if bias == "BEARISH" and not features.get("bos_up"):
+                hard.append("BEARISH yapı + BOS/CHOCH/MSS yukarı yok")
+            if safe_float(features.get("short_ict", 0)) >= safe_float(features.get("long_ict", 0)):
+                hard.append("SHORT ICT longtan güçlü/eşit")
+            if not features.get("flow_reliable") and safe_float(features.get("flow_buy_to_sell", 0)) >= 40:
+                hard.append("hacim ölü iken alış flow oranı şişmiş")
+
+    if vol1 < 0.35 and vol5 < 0.35:
+        soft.append(f"hacim zayıf 1m x{vol1:.2f}, 5m x{vol5:.2f}")
+        risk += 1.0
+    if breakdown >= 10:
+        good += 0.9
+    if edge >= 3.0:
+        good += 1.0
+    if quality >= 7.5:
+        good += 0.8
+    if close_class == "CLEAN" and score15 >= 2.6:
+        good += 0.8
+    if features.get("whale_conf") in ("YÜKSEK", "ÇOK_YÜKSEK"):
+        good += 0.7
+
+    risk += len(hard) * 2.0 + len(soft) * 0.7
+    return hard, soft, round(risk, 2), round(good, 2)
+
+
+def hasan_ai_memory_score(features: Dict[str, Any]) -> Tuple[float, float, List[str]]:
+    ai = hasan_ai_memory()
+    patterns = ai.get("patterns", {})
+    memory_risk = 0.0
+    memory_good = 0.0
+    reasons: List[str] = []
+    for key in hasan_ai_pattern_keys(features):
+        total, stop_rate, win_rate = _hasan_ai_stats_summary(patterns.get(key, {}))
+        tp2plus = _hasan_ai_tp2plus_rate(patterns.get(key, {}))
+        if total >= HASAN_AI_PRO_MIN_STRICT_SAMPLES:
+            if stop_rate >= HASAN_AI_PRO_STOP_RATE_BLOCK and win_rate < 0.50:
+                memory_risk += HASAN_AI_PRO_BAD_PATTERN_SCORE
+                reasons.append(f"kötü pattern stop %{stop_rate*100:.0f}/{total}")
+            elif win_rate >= 0.70 and tp2plus >= HASAN_AI_PRO_TP2PLUS_GOOD_RATE:
+                memory_good += HASAN_AI_PRO_GOOD_PATTERN_SCORE
+                reasons.append(f"iyi pattern TP %{win_rate*100:.0f}, TP2+ %{tp2plus*100:.0f}/{total}")
+
+    coin_key = f"{features.get('direction')}:{features.get('base')}"
+    total, stop_rate, win_rate = _hasan_ai_stats_summary(ai.get("coins", {}).get(coin_key, {}))
+    if total >= HASAN_AI_MIN_COIN_SAMPLES and stop_rate >= HASAN_AI_BAD_COIN_STOP_RATE:
+        memory_risk += 2.2
+        reasons.append(f"coin hafızası kötü {features.get('base')} stop %{stop_rate*100:.0f}/{total}")
+    elif total >= HASAN_AI_MIN_COIN_SAMPLES and win_rate >= 0.72:
+        memory_good += 0.8
+        reasons.append(f"coin hafızası iyi {features.get('base')} win %{win_rate*100:.0f}/{total}")
+
+    recent = list(ai.get("recent", []))[-HASAN_AI_RECENT_WINDOW:]
+    same_stops = [x for x in recent if x.get("base") == features.get("base") and x.get("direction") == features.get("direction") and x.get("outcome") == "STOP"]
+    if len(same_stops) >= HASAN_AI_MAX_RECENT_STOPS:
+        memory_risk += 2.0
+        reasons.append(f"son hafızada aynı coin/yön {len(same_stops)} stop")
+    return round(memory_risk, 2), round(memory_good, 2), reasons[:6]
+
+
+def hasan_ai_hakem_gate(payload: Dict[str, Any]) -> Tuple[bool, str, float]:
+    if not HASAN_AI_HAKEM_ENABLED:
+        return True, "Gerçek Hakem kapalı.", 0.0
+    f = hasan_ai_signal_features(payload)
+    hard, soft, rule_risk, rule_good = hasan_ai_rule_audit(f)
+    mem_risk, mem_good, mem_reasons = hasan_ai_memory_score(f)
+    final_score = round((rule_risk + mem_risk) - (rule_good + mem_good), 2)
+    if hard:
+        return False, "GERÇEK HAKEM BLOK: " + " | ".join(hard[:5]), final_score
+    if mem_risk >= HASAN_AI_PRO_MEMORY_BLOCK_SCORE:
+        return False, "GERÇEK HAKEM HAFIZA BLOK: " + " | ".join(mem_reasons[:5]), final_score
+    if final_score >= HASAN_AI_PRO_HARD_BLOCK_SCORE:
+        reasons = soft + mem_reasons
+        return False, "GERÇEK HAKEM RİSK BLOK: " + " | ".join(reasons[:5]), final_score
+    pass_notes = []
+    if f.get("close_class") == "CLEAN":
+        pass_notes.append("kapanış temiz")
+    if safe_float(f.get("ict_edge", 0)) >= HASAN_AI_PRO_MIN_ICT_EDGE:
+        pass_notes.append(f"ICT yön üstün {safe_float(f.get('ict_edge', 0)):.1f}")
+    if f.get("quality", 0) >= HASAN_AI_PRO_MIN_QUALITY:
+        pass_notes.append(f"kalite {f.get('quality')}")
+    if mem_good > 0:
+        pass_notes.append("hafıza destekli")
+    if f.get("whale_conf") in ("YÜKSEK", "ÇOK_YÜKSEK"):
+        pass_notes.append("Whale Eye destekli")
+    return True, "GERÇEK HAKEM GEÇTİ: " + (" | ".join(pass_notes[:5]) if pass_notes else "ana risk görülmedi"), final_score
+
+
+def hasan_ai_store_signal_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
+    f = hasan_ai_signal_features(payload)
+    return {
+        "features": f,
+        "keys": hasan_ai_pattern_keys(f),
+        "gate_reason": payload.get("hasan_ai_reason", "-"),
+        "gate_score": payload.get("hasan_ai_score", 0),
+        "sent_ts": time.time(),
+    }
+
+
+def _hasan_ai_update_bucket(bucket: Dict[str, Any], outcome: str, symbol: str) -> None:
+    bucket["total"] = int(safe_float(bucket.get("total", 0), 0)) + 1
+    for k in ("TP1", "TP2", "TP3", "STOP", "NÖTR"):
+        bucket.setdefault(k, 0)
+    bucket[outcome] = int(safe_float(bucket.get(outcome, 0), 0)) + 1
+    bucket.setdefault("last", []).append({"ts": time.time(), "outcome": outcome, "symbol": symbol})
+    bucket["last"] = bucket["last"][-20:]
+
+
+def hasan_ai_learn_from_followup(rec: Dict[str, Any], outcome: str) -> None:
+    if not HASAN_AI_HAKEM_ENABLED:
+        return
+    snap = rec.get("hasan_ai") if isinstance(rec.get("hasan_ai"), dict) else {}
+    f = snap.get("features") if isinstance(snap.get("features"), dict) else {}
+    keys = snap.get("keys") if isinstance(snap.get("keys"), list) else []
+    if not f or not keys:
+        return
+    ai = hasan_ai_memory()
+    outcome = str(outcome or "NÖTR").upper()
+    if outcome == "NO_HIT":
+        outcome = "NÖTR"
+    if outcome not in ("TP1", "TP2", "TP3", "STOP"):
+        outcome = "NÖTR"
+    potential = str(rec.get("potential_outcome", outcome)).upper()
+    if potential == "NO_HIT":
+        potential = "NÖTR"
+    if potential not in ("TP1", "TP2", "TP3", "STOP", "NÖTR"):
+        potential = outcome
+
+    for key in keys:
+        p = ai["patterns"].setdefault(key, {"total": 0, "TP1": 0, "TP2": 0, "TP3": 0, "STOP": 0, "NÖTR": 0, "last": []})
+        _hasan_ai_update_bucket(p, outcome, f.get("symbol"))
+        if HASAN_AI_PRO_STORE_MAX_POTENTIAL and potential in ("TP2", "TP3") and potential != outcome:
+            pp = ai.setdefault("potential_patterns", {}).setdefault(key, {"total": 0, "TP1": 0, "TP2": 0, "TP3": 0, "STOP": 0, "NÖTR": 0, "last": []})
+            _hasan_ai_update_bucket(pp, potential, f.get("symbol"))
+
+    coin_key = f"{f.get('direction')}:{f.get('base')}"
+    c = ai["coins"].setdefault(coin_key, {"total": 0, "TP1": 0, "TP2": 0, "TP3": 0, "STOP": 0, "NÖTR": 0, "last": []})
+    _hasan_ai_update_bucket(c, outcome, f.get("symbol"))
+    ai.setdefault("recent", []).append({
+        "ts": time.time(), "symbol": f.get("symbol"), "base": f.get("base"), "direction": f.get("direction"),
+        "outcome": outcome, "potential": potential, "ict_bias": f.get("ict_bias"), "close_class": f.get("close_class"),
+        "score15": f.get("score15"), "ict_edge": f.get("ict_edge"), "inv_class": f.get("inv_class"), "whale": f.get("whale_conf"),
+    })
+    ai["recent"] = ai["recent"][-300:]
+    stats["hasan_ai_learn"] = stats.get("hasan_ai_learn", 0) + 1
+
+
+def build_hasan_ai_status_message() -> str:
+    ai = hasan_ai_memory()
+    coins = ai.get("coins", {})
+    patterns = ai.get("patterns", {})
+    recent = ai.get("recent", [])[-10:]
+    total = sum(int(safe_float(v.get("total", 0), 0)) for v in coins.values())
+    stop_total = sum(int(safe_float(v.get("STOP", 0), 0)) for v in coins.values())
+    tp1_total = sum(int(safe_float(v.get("TP1", 0), 0)) for v in coins.values())
+    tp2_total = sum(int(safe_float(v.get("TP2", 0), 0)) for v in coins.values())
+    tp3_total = sum(int(safe_float(v.get("TP3", 0), 0)) for v in coins.values())
+    tp_total = tp1_total + tp2_total + tp3_total
+    rate = (tp_total / total * 100.0) if total else 0.0
+    worst = []
+    best = []
+    for key, rec in patterns.items():
+        t, stop_rate, win_rate = _hasan_ai_stats_summary(rec)
+        if t >= HASAN_AI_PRO_MIN_STRICT_SAMPLES:
+            tp2p = _hasan_ai_tp2plus_rate(rec)
+            item = (key, t, stop_rate, win_rate, tp2p)
+            if stop_rate >= 0.50:
+                worst.append(item)
+            if win_rate >= 0.65:
+                best.append(item)
+    worst = sorted(worst, key=lambda x: (x[2], x[1]), reverse=True)[:3]
+    best = sorted(best, key=lambda x: (x[3], x[4], x[1]), reverse=True)[:3]
+    lines = [
+        "🧠 GERÇEK HAKEM PRO BİRLEŞİK DURUM",
+        f"Saat: {tr_str()}",
+        f"Aktif: {'EVET' if HASAN_AI_HAKEM_ENABLED else 'HAYIR'} | Pro mod: {'EVET' if HASAN_AI_PRO_MODE_ENABLED else 'HAYIR'}",
+        f"Öğrenilen sonuç: {total} | TP1/TP2/TP3: {tp1_total}/{tp2_total}/{tp3_total} | Stop: {stop_total} | Başarı: %{rate:.1f}",
+        f"Pattern hafızası: {len(patterns)} | Coin hafızası: {len(coins)} | Potansiyel hafıza: {len(ai.get('potential_patterns', {}))}",
+        f"Blok/geçiş/öğrenme: {stats.get('hasan_ai_block', 0)} / {stats.get('hasan_ai_pass', 0)} / {stats.get('hasan_ai_learn', 0)}",
+    ]
+    if worst:
+        lines.append("Kötü patternler:")
+        for key, t, sr, wr, tp2p in worst:
+            lines.append(f"- stop %{sr*100:.0f}, win %{wr*100:.0f}, n={t} | {key[:95]}")
+    if best:
+        lines.append("İyi patternler:")
+        for key, t, sr, wr, tp2p in best:
+            lines.append(f"- win %{wr*100:.0f}, TP2+ %{tp2p*100:.0f}, n={t} | {key[:95]}")
+    if recent:
+        lines.append("Son hafıza:")
+        for r in recent[-6:]:
+            pot = r.get("potential")
+            pot_txt = f" / pot={pot}" if pot and pot != r.get("outcome") else ""
+            lines.append(f"- {r.get('symbol')} {r.get('direction')} → {r.get('outcome')}{pot_txt} | {r.get('ict_bias')} | {r.get('close_class')} | edge={r.get('ict_edge')} | whale={r.get('whale')}")
+    return "\n".join(lines)
+
+
+
+
+# =========================================================
+# PRO PLUS: DESTEK/DİRENÇ + REJİM + MAKRO + POZİSYON + BACKTEST
+# =========================================================
+def _pivot_levels(values_high: List[float], values_low: List[float], left: int = 2, right: int = 2) -> Tuple[List[float], List[float]]:
+    resistances: List[float] = []
+    supports: List[float] = []
+    n = min(len(values_high), len(values_low))
+    if n < left + right + 3:
+        return supports, resistances
+    for i in range(left, n - right):
+        h = values_high[i]
+        l = values_low[i]
+        prev_h = values_high[i-left:i]
+        next_h = values_high[i+1:i+right+1]
+        prev_l = values_low[i-left:i]
+        next_l = values_low[i+1:i+right+1]
+        if prev_h and next_h and h >= max(prev_h) and h >= max(next_h):
+            resistances.append(h)
+        if prev_l and next_l and l <= min(prev_l) and l <= min(next_l):
+            supports.append(l)
+    return supports, resistances
+
+
+def _cluster_levels(levels: List[float], price: float, cluster_pct: float = SR_CLUSTER_PCT) -> List[Dict[str, Any]]:
+    clean = sorted([x for x in levels if x > 0])
+    if not clean:
+        return []
+    clusters: List[List[float]] = []
+    for lv in clean:
+        if not clusters:
+            clusters.append([lv])
+            continue
+        center = avg(clusters[-1])
+        if abs(pct_change(center, lv)) <= cluster_pct:
+            clusters[-1].append(lv)
+        else:
+            clusters.append([lv])
+    out: List[Dict[str, Any]] = []
+    for vals in clusters:
+        center = avg(vals)
+        out.append({"level": center, "touches": len(vals), "distance_pct": pct_change(price, center) if price > 0 else 0.0, "score": len(vals)})
+    return sorted(out, key=lambda x: (abs(safe_float(x.get("distance_pct", 999))), -safe_float(x.get("score", 0))))
+
+
+def build_support_resistance_context(k1: List[List[Any]], k5: List[List[Any]], k15: List[List[Any]], price: float, direction: str = "SHORT") -> Dict[str, Any]:
+    if not SR_ENGINE_ENABLED:
+        return {"enabled": False, "decision": "KAPALI", "passed": True, "reason": "SR motoru kapalı"}
+    if len(k1) < 40 or len(k5) < 30:
+        return {"enabled": True, "decision": "VERI_YOK", "passed": False, "reason": "SR verisi yetersiz"}
+    direction = (direction or "SHORT").upper()
+    h1, l1 = highs(k1[-SR_LOOKBACK_1M:]), lows(k1[-SR_LOOKBACK_1M:])
+    h5, l5 = highs(k5[-SR_LOOKBACK_5M:]), lows(k5[-SR_LOOKBACK_5M:])
+    h15, l15 = highs(k15[-48:]) if len(k15) >= 48 else highs(k15), lows(k15[-48:]) if len(k15) >= 48 else lows(k15)
+    s1, r1 = _pivot_levels(h1, l1, SR_PIVOT_LEFT, SR_PIVOT_RIGHT)
+    s5, r5 = _pivot_levels(h5, l5, SR_PIVOT_LEFT, SR_PIVOT_RIGHT)
+    s15, r15 = _pivot_levels(h15, l15, SR_PIVOT_LEFT, SR_PIVOT_RIGHT)
+    support_clusters = _cluster_levels(s1 + s5 + s15 + [min(l1[-20:])], price)
+    resistance_clusters = _cluster_levels(r1 + r5 + r15 + [max(h1[-20:])], price)
+    below = [x for x in support_clusters if safe_float(x.get("level")) < price]
+    above = [x for x in resistance_clusters if safe_float(x.get("level")) > price]
+    nearest_support = max(below, key=lambda x: safe_float(x.get("level")), default={})
+    nearest_resistance = min(above, key=lambda x: safe_float(x.get("level")), default={})
+    sup = safe_float(nearest_support.get("level", 0))
+    res = safe_float(nearest_resistance.get("level", 0))
+    support_dist = abs(pct_change(price, sup)) if sup > 0 else 999.0
+    resistance_dist = abs(pct_change(price, res)) if res > 0 else 999.0
+    if direction == "LONG":
+        near_zone = support_dist <= SR_NEAR_LEVEL_PCT or price <= safe_float(nearest_support.get("level", 0)) * (1 + SR_NEAR_LEVEL_PCT/100.0) if sup > 0 else False
+        wall_side = "direnç"
+        decision = "LONG_SR_TEMIZ" if near_zone else "LONG_DESTEK_ZAYIF"
+        passed = True
+        reason = f"LONG: destek {fmt_num(sup)} mesafe %{support_dist:.2f}, direnç {fmt_num(res)} mesafe %{resistance_dist:.2f}"
+    else:
+        near_zone = resistance_dist <= SR_NEAR_LEVEL_PCT or price >= safe_float(nearest_resistance.get("level", 0)) * (1 - SR_NEAR_LEVEL_PCT/100.0) if res > 0 else False
+        wall_side = "destek"
+        decision = "SHORT_SR_TEMIZ" if near_zone else "SHORT_DIRENC_ZAYIF"
+        passed = True
+        reason = f"SHORT: direnç {fmt_num(res)} mesafe %{resistance_dist:.2f}, destek {fmt_num(sup)} mesafe %{support_dist:.2f}"
+    return {
+        "enabled": True,
+        "passed": passed,
+        "decision": decision,
+        "direction": direction,
+        "nearest_support": sup,
+        "nearest_resistance": res,
+        "support_distance_pct": round(support_dist, 2),
+        "resistance_distance_pct": round(resistance_dist, 2),
+        "support_score": safe_float(nearest_support.get("score", 0)),
+        "resistance_score": safe_float(nearest_resistance.get("score", 0)),
+        "near_trade_zone": bool(near_zone),
+        "wall_side": wall_side,
+        "reason": reason,
+    }
+
+
+def sr_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    sr = payload.get("support_resistance") if isinstance(payload.get("support_resistance"), dict) else {}
+    if not SR_ENGINE_ENABLED or not sr or not sr.get("enabled"):
+        return True, "SR kapısı kapalı/yok"
+    direction = str(payload.get("direction", "SHORT")).upper()
+    price = safe_float(payload.get("price", 0))
+    stop = safe_float(payload.get("stop", 0))
+    tp1 = safe_float(payload.get("tp1", 0))
+    sup = safe_float(sr.get("nearest_support", 0))
+    res = safe_float(sr.get("nearest_resistance", 0))
+    vol1 = safe_float(payload.get("vol_ratio_1m", 0))
+    vol5 = safe_float(payload.get("vol_ratio_5m", 0))
+    flow = payload.get("trade_flow") if isinstance(payload.get("trade_flow"), dict) else {}
+    buy_to_sell = safe_float(flow.get("buy_to_sell", 0))
+    sell_to_buy = safe_float(flow.get("sell_to_buy", 0))
+    reasons: List[str] = []
+    passed = True
+    if direction == "LONG":
+        if sup <= 0 or safe_float(sr.get("support_distance_pct", 999)) > SR_NEAR_LEVEL_PCT:
+            passed = False; reasons.append(f"LONG destekten uzak %{safe_float(sr.get('support_distance_pct', 999)):.2f}")
+        if SR_BLOCK_IF_TP1_WALL and res > 0 and res < tp1 * (1 + SR_TP1_ROOM_BUFFER_PCT/100.0):
+            passed = False; reasons.append(f"TP1 önünde yakın direnç {fmt_num(res)}")
+        if sup > 0 and stop > sup * (1 - SR_STOP_BEHIND_LEVEL_PCT/100.0):
+            passed = False; reasons.append(f"stop desteğin arkasında değil: stop {fmt_num(stop)} destek {fmt_num(sup)}")
+        if SR_BLOCK_WEAK_ZONE_LOW_FLOW and vol1 < LONG_WEAK_VOL_1M_BLOCK and vol5 < LONG_WEAK_VOL_5M_BLOCK and buy_to_sell < LONG_MIN_BUY_TO_SELL:
+            passed = False; reasons.append(f"LONG hacim/flow zayıf: vol {vol1:.2f}/{vol5:.2f}, flow {buy_to_sell:.2f}")
+    else:
+        if res <= 0 or safe_float(sr.get("resistance_distance_pct", 999)) > SR_NEAR_LEVEL_PCT:
+            passed = False; reasons.append(f"SHORT dirençten uzak %{safe_float(sr.get('resistance_distance_pct', 999)):.2f}")
+        if SR_BLOCK_IF_TP1_WALL and sup > 0 and sup > tp1 * (1 - SR_TP1_ROOM_BUFFER_PCT/100.0):
+            passed = False; reasons.append(f"TP1 önünde yakın destek {fmt_num(sup)}")
+        if res > 0 and stop < res * (1 + SR_STOP_BEHIND_LEVEL_PCT/100.0):
+            passed = False; reasons.append(f"stop direncin arkasında değil: stop {fmt_num(stop)} direnç {fmt_num(res)}")
+        if SR_BLOCK_WEAK_ZONE_LOW_FLOW and vol1 < 0.55 and vol5 < 0.35 and sell_to_buy < 1.10:
+            passed = False; reasons.append(f"SHORT hacim/flow zayıf: vol {vol1:.2f}/{vol5:.2f}, flow {sell_to_buy:.2f}")
+    return passed, " | ".join(reasons) if reasons else sr.get("reason", "SR temiz")
+
+
+def build_market_regime_context(k1: List[List[Any]], k5: List[List[Any]], k15: List[List[Any]], price: float) -> Dict[str, Any]:
+    if not MARKET_REGIME_ENGINE_ENABLED:
+        return {"enabled": False, "regime": "KAPALI", "bias": "NÖTR", "passed": True, "reason": "Rejim motoru kapalı"}
+    if len(k5) < 55 or len(k15) < 30:
+        return {"enabled": True, "regime": "VERI_YOK", "bias": "NÖTR", "passed": False, "reason": "Rejim verisi yetersiz"}
+    c5 = closes(k5); h5 = highs(k5); l5 = lows(k5); v5 = volumes(k5)
+    c15 = closes(k15)
+    e9 = ema(c5, 9); e21 = ema(c5, 21); e50 = ema(c5, 50)
+    r5 = rsi(c5, 14); atr5 = atr(k5, 14)
+    width_pct = abs(pct_change(min(l5[-30:]), max(h5[-30:]))) if min(l5[-30:]) > 0 else 0.0
+    ema_gap = pct_change(e50[-1], price) if e50[-1] > 0 else 0.0
+    vol_ratio = safe_float(v5[-1]) / max(avg(v5[-20:-1]), 1e-9)
+    last_range = max(h5[-1] - l5[-1], 1e-9)
+    atr_now = max(atr5[-1], price * 0.001)
+    breakout_up = c5[-1] > max(h5[-20:-1]) and last_range >= atr_now * REGIME_BREAKOUT_ATR_MULT
+    breakout_down = c5[-1] < min(l5[-20:-1]) and last_range >= atr_now * REGIME_BREAKOUT_ATR_MULT
+    uptrend = price > e9[-1] > e21[-1] > e50[-1] and ema_gap >= REGIME_TREND_EMA_GAP_PCT
+    downtrend = price < e9[-1] < e21[-1] < e50[-1] and ema_gap <= -REGIME_TREND_EMA_GAP_PCT
+    range_mode = width_pct <= REGIME_RANGE_MAX_WIDTH_PCT and not breakout_up and not breakout_down
+    if breakout_up:
+        regime, bias = "BREAKOUT_UP", "LONG"
+    elif breakout_down:
+        regime, bias = "BREAKDOWN_DOWN", "SHORT"
+    elif uptrend and r5[-1] >= 55:
+        regime, bias = "TREND_UP", "LONG"
+    elif downtrend and r5[-1] <= 45:
+        regime, bias = "TREND_DOWN", "SHORT"
+    elif range_mode:
+        regime, bias = "RANGE", "NÖTR"
+    elif r5[-1] >= 68 and vol_ratio >= 1.15:
+        regime, bias = "PUMP_DEVAM", "LONG"
+    elif r5[-1] <= 34 and vol_ratio >= 1.15:
+        regime, bias = "DUSUS_DEVAM", "SHORT"
+    else:
+        regime, bias = "KARISIK", "NÖTR"
+    score = 0.0
+    if bias == "LONG": score += 2.0
+    if bias == "SHORT": score -= 2.0
+    return {"enabled": True, "regime": regime, "bias": bias, "score": round(score, 2), "width_pct": round(width_pct, 2), "ema_gap_pct": round(ema_gap, 2), "vol_ratio": round(vol_ratio, 2), "reason": f"Rejim {regime} | bias {bias} | genişlik %{width_pct:.2f} | EMA50 fark %{ema_gap:.2f} | vol x{vol_ratio:.2f}"}
+
+
+def regime_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    reg = payload.get("market_regime") if isinstance(payload.get("market_regime"), dict) else {}
+    if not MARKET_REGIME_ENGINE_ENABLED or not reg or not reg.get("enabled"):
+        return True, "Rejim kapısı kapalı/yok"
+    direction = str(payload.get("direction", "SHORT")).upper()
+    regime = str(reg.get("regime", ""))
+    bias = str(reg.get("bias", "NÖTR"))
+    if not REGIME_BLOCK_COUNTER_TREND:
+        return True, reg.get("reason", "Rejim pass")
+    if direction == "LONG" and bias == "SHORT" and regime in ("TREND_DOWN", "BREAKDOWN_DOWN", "DUSUS_DEVAM"):
+        return False, f"Rejim LONG'a ters: {regime}"
+    if direction == "SHORT" and bias == "LONG" and regime in ("TREND_UP", "BREAKOUT_UP", "PUMP_DEVAM"):
+        return False, f"Rejim SHORT'a ters: {regime}"
+    return True, reg.get("reason", "Rejim temiz")
+
+
+def _series_returns(values: List[float], lookback: int = 30) -> List[float]:
+    vals = values[-lookback:]
+    out = []
+    for i in range(1, len(vals)):
+        out.append(pct_change(vals[i-1], vals[i]))
+    return out
+
+
+def _corr(a: List[float], b: List[float]) -> float:
+    n = min(len(a), len(b))
+    if n < 8:
+        return 0.0
+    a = a[-n:]; b = b[-n:]
+    ma, mb = avg(a), avg(b)
+    da = [x-ma for x in a]; db = [x-mb for x in b]
+    va = sum(x*x for x in da); vb = sum(x*x for x in db)
+    if va <= 0 or vb <= 0:
+        return 0.0
+    return sum(x*y for x,y in zip(da, db)) / ((va ** 0.5) * (vb ** 0.5))
+
+
+async def build_macro_correlation_context(symbol: str, k5_symbol: List[List[Any]], direction: str = "SHORT") -> Dict[str, Any]:
+    if not MACRO_CORRELATION_ENGINE_ENABLED:
+        return {"enabled": False, "decision": "KAPALI", "passed": True, "reason": "Makro motor kapalı"}
+    direction = (direction or "SHORT").upper()
+    btc_symbol = normalize_symbol(MACRO_SYMBOLS[0] if MACRO_SYMBOLS else "BTC-USDT-SWAP")
+    if normalize_symbol(symbol) == btc_symbol:
+        return {"enabled": True, "decision": "ANA_COIN", "passed": True, "reason": "Ana makro coin kendisi"}
+    btc1 = await get_klines(btc_symbol, "1m", 80)
+    btc5 = await get_klines(btc_symbol, "5m", 80)
+    if len(btc1) < 30 or len(btc5) < 30 or len(k5_symbol) < 30:
+        return {"enabled": True, "decision": "VERI_YOK", "passed": True, "reason": "BTC/makro verisi yetersiz"}
+    b1 = closes(btc1); b5 = closes(btc5); s5 = closes(k5_symbol)
+    btc_5m = pct_change(b1[-6], b1[-1]) if len(b1) >= 6 else 0.0
+    btc_20m = pct_change(b1[-21], b1[-1]) if len(b1) >= 21 else 0.0
+    btc_1h = pct_change(b5[-13], b5[-1]) if len(b5) >= 13 else 0.0
+    corr = _corr(_series_returns(s5, 35), _series_returns(b5, 35))
+    passed = True
+    decision = "MAKRO_TEMIZ"
+    reasons = [f"BTC 5m/20m/1h %{btc_5m:.2f}/%{btc_20m:.2f}/%{btc_1h:.2f}", f"corr {corr:.2f}"]
+    if direction == "LONG" and btc_20m <= -MACRO_BTC_DROP_BLOCK_LONG_PCT and (corr >= MACRO_HIGH_CORR_MIN or MACRO_BLOCK_IF_HIGH_CORR_COUNTER):
+        passed = False; decision = "LONG_MAKRO_BLOK"; reasons.append("BTC düşerken altcoin LONG riskli")
+    if direction == "SHORT" and btc_20m >= MACRO_BTC_PUMP_BLOCK_SHORT_PCT and (corr >= MACRO_HIGH_CORR_MIN or MACRO_BLOCK_IF_HIGH_CORR_COUNTER):
+        passed = False; decision = "SHORT_MAKRO_BLOK"; reasons.append("BTC yükselirken altcoin SHORT riskli")
+    if abs(btc_5m) >= MACRO_BTC_FAST_MOVE_5M_PCT:
+        reasons.append("BTC hızlı hareket ediyor; slippage/ters iğne riski")
+    return {"enabled": True, "passed": passed, "decision": decision, "btc_5m_pct": round(btc_5m, 2), "btc_20m_pct": round(btc_20m, 2), "btc_1h_pct": round(btc_1h, 2), "correlation": round(corr, 2), "reason": " | ".join(reasons)}
+
+
+def macro_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    macro = payload.get("macro") if isinstance(payload.get("macro"), dict) else {}
+    if not MACRO_CORRELATION_ENGINE_ENABLED or not macro or not macro.get("enabled"):
+        return True, "Makro kapısı kapalı/yok"
+    return bool(macro.get("passed", True)), str(macro.get("reason", "Makro temiz"))
+
+
+def format_pro_plus_blocks(res: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    reg = res.get("market_regime") if isinstance(res.get("market_regime"), dict) else {}
+    macro = res.get("macro") if isinstance(res.get("macro"), dict) else {}
+    sr = res.get("support_resistance") if isinstance(res.get("support_resistance"), dict) else {}
+    pm = res.get("position_plan") if isinstance(res.get("position_plan"), dict) else {}
+    if reg:
+        parts.append(f"\n🧭 Piyasa Rejimi: {reg.get('regime','-')} | Bias: {reg.get('bias','-')} | {reg.get('reason','-')}")
+    if macro:
+        parts.append(f"\n🌍 Makro/BTC: {macro.get('decision','-')} | {macro.get('reason','-')}")
+    if sr:
+        parts.append(
+            f"\n🧱 Destek/Direnç: {sr.get('decision','-')} | Destek {fmt_num(sr.get('nearest_support',0))} (%{sr.get('support_distance_pct','-')}) | "
+            f"Direnç {fmt_num(sr.get('nearest_resistance',0))} (%{sr.get('resistance_distance_pct','-')}) | {sr.get('reason','-')}"
+        )
+    if pm:
+        parts.append(f"\n🎛️ Pozisyon Planı: {pm.get('summary','-')}")
+    return "".join(parts)
+
+
+def build_position_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
+    direction = str(payload.get("direction", "SHORT")).upper()
+    entry = safe_float(payload.get("price", 0))
+    stop = safe_float(payload.get("stop", 0))
+    tp1 = safe_float(payload.get("tp1", 0))
+    tp2 = safe_float(payload.get("tp2", 0))
+    tp3 = safe_float(payload.get("tp3", 0))
+    if entry <= 0:
+        return {"enabled": False, "summary": "Entry yok"}
+    be = entry
+    summary = (
+        f"TP1 %{POSITION_TP1_PARTIAL_PCT:.0f} kısmi çıkış + stop BE; "
+        f"TP2 %{POSITION_TP2_PARTIAL_PCT:.0f} ek çıkış; kalan TP3/trailing. "
+        f"BE={fmt_num(be)} | Stop={fmt_num(stop)} | TP1={fmt_num(tp1)} | TP2={fmt_num(tp2)} | TP3={fmt_num(tp3)}"
+    )
+    return {"enabled": POSITION_MANAGER_ENABLED, "direction": direction, "break_even_stop": be, "tp1_partial_pct": POSITION_TP1_PARTIAL_PCT, "tp2_partial_pct": POSITION_TP2_PARTIAL_PCT, "trailing_enabled": POSITION_TRAILING_ENABLED, "summary": summary}
+
+
+def position_manager_evaluate(k1: List[List[Any]], rec: Dict[str, Any]) -> Dict[str, Any]:
+    direction = str(rec.get("direction", "SHORT")).upper()
+    entry = safe_float(rec.get("entry", 0)); stop = safe_float(rec.get("stop", 0))
+    tp1 = safe_float(rec.get("tp1", 0)); tp2 = safe_float(rec.get("tp2", 0)); tp3 = safe_float(rec.get("tp3", 0))
+    if not k1 or entry <= 0:
+        return {"action": "YOK", "reason": "veri yok"}
+    last = safe_float(k1[-1][4])
+    high = max(highs(k1[-30:])) if len(k1) >= 30 else max(highs(k1))
+    low = min(lows(k1[-30:])) if len(k1) >= 30 else min(lows(k1))
+    atr_now = max(atr(k1, 14)[-1], entry * 0.001)
+    profit_pct = pct_change(entry, last) if direction == "LONG" else pct_change(entry, last) * -1
+    pm_sent = rec.setdefault("pm_sent", {})
+    if direction == "LONG":
+        if last >= tp1 and not pm_sent.get("tp1"):
+            return {"action": "TP1", "new_stop": entry if POSITION_MOVE_STOP_BE_AFTER_TP1 else stop, "reason": f"TP1 görüldü; %{POSITION_TP1_PARTIAL_PCT:.0f} kısmi çıkış + stop BE önerisi"}
+        if last >= tp2 and not pm_sent.get("tp2"):
+            trail = max(entry, last - atr_now * POSITION_TRAIL_ATR_MULT)
+            return {"action": "TP2", "new_stop": trail, "reason": f"TP2 görüldü; ek kâr alma + trailing stop {fmt_num(trail)}"}
+        if POSITION_TRAILING_ENABLED and profit_pct >= POSITION_TRAIL_AFTER_PROFIT_PCT:
+            trail = max(entry, high - atr_now * POSITION_TRAIL_ATR_MULT)
+            old_trail = safe_float(rec.get("trailing_stop", 0))
+            if trail > old_trail * 1.001:
+                return {"action": "TRAIL", "new_stop": trail, "reason": f"LONG kâr %{profit_pct:.2f}; trailing stop {fmt_num(trail)}"}
+    else:
+        if last <= tp1 and not pm_sent.get("tp1"):
+            return {"action": "TP1", "new_stop": entry if POSITION_MOVE_STOP_BE_AFTER_TP1 else stop, "reason": f"TP1 görüldü; %{POSITION_TP1_PARTIAL_PCT:.0f} kısmi çıkış + stop BE önerisi"}
+        if last <= tp2 and not pm_sent.get("tp2"):
+            trail = min(entry, last + atr_now * POSITION_TRAIL_ATR_MULT)
+            return {"action": "TP2", "new_stop": trail, "reason": f"TP2 görüldü; ek kâr alma + trailing stop {fmt_num(trail)}"}
+        if POSITION_TRAILING_ENABLED and profit_pct >= POSITION_TRAIL_AFTER_PROFIT_PCT:
+            trail = min(entry, low + atr_now * POSITION_TRAIL_ATR_MULT)
+            old_trail = safe_float(rec.get("trailing_stop", 999999999))
+            if old_trail == 999999999 or trail < old_trail * 0.999:
+                return {"action": "TRAIL", "new_stop": trail, "reason": f"SHORT kâr %{profit_pct:.2f}; trailing stop {fmt_num(trail)}"}
+    return {"action": "YOK", "reason": f"aktif kâr %{profit_pct:.2f}, yeni PM yok"}
+
+
+async def position_management_loop() -> None:
+    if not POSITION_MANAGER_ENABLED:
+        return
+    while True:
+        try:
+            now_ts = time.time()
+            for key, rec in list(memory.get("follows", {}).items()):
+                if rec.get("done"):
+                    continue
+                if now_ts - safe_float(rec.get("sent_ts", 0)) < POSITION_PM_MIN_AGE_SEC:
+                    continue
+                sym = normalize_symbol(str(rec.get("symbol", key)).replace("LONG:", "").replace("SHORT:", ""))
+                k1 = await get_klines(sym, "1m", 90)
+                action = position_manager_evaluate(k1, rec)
+                act = str(action.get("action", "YOK"))
+                if act == "YOK":
+                    continue
+                rec.setdefault("pm_sent", {})[act.lower()] = time.time()
+                new_stop = safe_float(action.get("new_stop", 0))
+                if new_stop > 0:
+                    rec["trailing_stop"] = new_stop
+                if POSITION_SEND_PM_ALERTS:
+                    text = (
+                        f"🎛️ POZİSYON YÖNETİMİ\n"
+                        f"⏰ {tr_str()}\n"
+                        f"🎯 {sym} | {rec.get('direction','-')}\n"
+                        f"Eylem: {act}\n"
+                        f"Yeni önerilen stop: {fmt_num(new_stop) if new_stop > 0 else '-'}\n"
+                        f"Not: {action.get('reason','-')}\n"
+                        f"Uyarı: Bu mod emir göndermez; yönetim uyarısı üretir."
+                    )
+                    if await safe_send_telegram(text):
+                        stats["pm_alert_sent"] = stats.get("pm_alert_sent", 0) + 1
+        except Exception as e:
+            logger.exception("position_management_loop hata: %s", e)
+        await asyncio.sleep(max(30, POSITION_MANAGER_CHECK_INTERVAL_SEC))
+
+
+def _backtest_make_levels(direction: str, entry: float) -> Tuple[float, float, float, float]:
+    if direction == "LONG":
+        stop = entry * (1 - BACKTEST_RISK_STOP_PCT/100.0)
+        return stop, entry * (1 + BACKTEST_TP1_PCT/100.0), entry * (1 + BACKTEST_TP2_PCT/100.0), entry * (1 + BACKTEST_TP3_PCT/100.0)
+    stop = entry * (1 + BACKTEST_RISK_STOP_PCT/100.0)
+    return stop, entry * (1 - BACKTEST_TP1_PCT/100.0), entry * (1 - BACKTEST_TP2_PCT/100.0), entry * (1 - BACKTEST_TP3_PCT/100.0)
+
+
+def run_simple_backtest_on_klines(symbol: str, k1: List[List[Any]], direction: str, bars: int = BACKTEST_DEFAULT_BARS) -> Dict[str, Any]:
+    direction = (direction or "SHORT").upper()
+    data = k1[-max(80, min(len(k1), bars)):]
+    if len(data) < 90:
+        return {"ok": False, "reason": "Backtest için mum yetersiz"}
+    closes_v = closes(data); highs_v = highs(data); lows_v = lows(data); vols_v = volumes(data)
+    rs = rsi(closes_v, 14); e9 = ema(closes_v, 9); e21 = ema(closes_v, 21)
+    signals = []
+    last_i = -999
+    for i in range(55, len(data) - BACKTEST_FORWARD_BARS):
+        if i - last_i < BACKTEST_MIN_SIGNAL_GAP_BARS:
+            continue
+        window_high = max(highs_v[i-50:i]); window_low = min(lows_v[i-50:i]); price = closes_v[i]
+        width = max(window_high - window_low, 1e-9)
+        pos = (price - window_low) / width
+        vol_ratio = vols_v[i] / max(avg(vols_v[i-20:i]), 1e-9)
+        trigger = False
+        if direction == "SHORT":
+            trigger = pos >= 0.70 and price < e9[i] and rs[i] < rs[i-1] and vol_ratio >= 0.55
+        else:
+            trigger = pos <= 0.35 and price > e9[i] and rs[i] > rs[i-1] and vol_ratio >= 0.45
+        if not trigger:
+            continue
+        entry = price
+        stop, tp1, tp2, tp3 = _backtest_make_levels(direction, entry)
+        result = evaluate_tp_stop_path(data[i+1:i+1+BACKTEST_FORWARD_BARS], direction, time.time()-999999, entry, stop, tp1, tp2, tp3)
+        signals.append({"i": i, "entry": entry, "outcome": result.get("trade_outcome", result.get("outcome")), "potential": result.get("potential_outcome"), "checked": result.get("checked")})
+        last_i = i
+    total = len(signals); wins = sum(1 for x in signals if str(x.get("outcome", "")).startswith("TP")); stops = sum(1 for x in signals if x.get("outcome") == "STOP")
+    tp3 = sum(1 for x in signals if x.get("potential") == "TP3")
+    rate = wins / total * 100.0 if total else 0.0
+    return {"ok": True, "symbol": symbol, "direction": direction, "signals": total, "wins": wins, "stops": stops, "tp3_potential": tp3, "win_rate": round(rate, 1), "last": signals[-8:]}
+
+
+async def cmd_backtest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not BACKTEST_ENGINE_ENABLED:
+        await update.message.reply_text("Backtest motoru kapalı.")
+        return
+    if not context.args:
+        await update.message.reply_text("Kullanım: /backtest LDOUSDT LONG 240")
+        return
+    sym = normalize_symbol(context.args[0])
+    direction = str(context.args[1]).upper() if len(context.args) >= 2 else "SHORT"
+    bars = int(safe_float(context.args[2], BACKTEST_DEFAULT_BARS)) if len(context.args) >= 3 else BACKTEST_DEFAULT_BARS
+    k1 = await get_klines(sym, "1m", min(300, max(120, bars)))
+    res = run_simple_backtest_on_klines(sym, k1, direction, bars)
+    stats["backtest_run"] = stats.get("backtest_run", 0) + 1
+    if not res.get("ok"):
+        await update.message.reply_text(f"Backtest yapılamadı: {res.get('reason')}")
+        return
+    lines = [
+        "🧪 BACKTEST / REPLAY RAPORU",
+        f"Coin: {sym} | Yön: {direction} | Mum: {bars}",
+        f"Sinyal: {res.get('signals')} | TP: {res.get('wins')} | STOP: {res.get('stops')} | Başarı: %{res.get('win_rate')}",
+        f"TP3 potansiyel: {res.get('tp3_potential')}",
+        "Not: Bu hızlı replay testidir; canlı emir garantisi değildir."
+    ]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def cmd_pozisyon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    follows = memory.get("follows", {})
+    active = [(k, v) for k, v in follows.items() if isinstance(v, dict) and not v.get("done")]
+    if not active:
+        await update.message.reply_text("Aktif takip edilen pozisyon yok.")
+        return
+    lines = ["🎛️ AKTİF POZİSYON YÖNETİMİ"]
+    for k, rec in active[:12]:
+        lines.append(f"- {rec.get('symbol')} {rec.get('direction')} | entry {fmt_num(rec.get('entry',0))} | stop {fmt_num(rec.get('stop',0))} | trailing {fmt_num(rec.get('trailing_stop',0)) if rec.get('trailing_stop') else '-'}")
+    await update.message.reply_text("\n".join(lines))
+
+async def cmd_hakem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(build_hasan_ai_status_message())
 
 def enforce_single_short_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
     p = copy.deepcopy(payload)
@@ -3136,6 +4079,21 @@ def enforce_single_short_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
         return p
 
     reason_text = str(p.get("reason", ""))
+    for gate_name, gate_fn, stat_key in (
+        ("Rejim", regime_final_gate, "regime_block"),
+        ("Makro", macro_final_gate, "macro_block"),
+        ("SR", sr_final_gate, "sr_block"),
+    ):
+        ok_gate, gate_reason = gate_fn(p)
+        if not ok_gate:
+            p["stage"] = "READY"
+            p["signal_label"] = "İÇ TAKİP"
+            p["reason"] = f"{reason_text} | {gate_name} kapısı blok: {gate_reason}"
+            stats[stat_key] = stats.get(stat_key, 0) + 1
+            return p
+        else:
+            pass_key = stat_key.replace("block", "pass")
+            stats[pass_key] = stats.get(pass_key, 0) + 1
     pump_20m = safe_float(p.get("pump_20m", 0))
     pump_1h = safe_float(p.get("pump_1h", 0))
 
@@ -3166,6 +4124,21 @@ def enforce_single_long_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     ict = p.get("ict") if isinstance(p.get("ict"), dict) else {}
     reason = str(p.get("reason", ""))
+    for gate_name, gate_fn, stat_key in (
+        ("Rejim", regime_final_gate, "regime_block"),
+        ("Makro", macro_final_gate, "macro_block"),
+        ("SR", sr_final_gate, "sr_block"),
+    ):
+        ok_gate, gate_reason = gate_fn(p)
+        if not ok_gate:
+            p["stage"] = "READY"
+            p["signal_label"] = "İÇ TAKİP"
+            p["reason"] = f"{reason} | {gate_name} kapısı blok: {gate_reason}"
+            stats[stat_key] = stats.get(stat_key, 0) + 1
+            return p
+        else:
+            pass_key = stat_key.replace("block", "pass")
+            stats[pass_key] = stats.get(pass_key, 0) + 1
 
     if ICT_REQUIRE_PRO_CONTEXT_FOR_SIGNAL and safe_float(ict.get("long_pro_score", 0)) < ICT_LONG_MIN_PRO_SCORE:
         p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"
@@ -3290,7 +4263,7 @@ def build_signal_message(res: Dict[str, Any]) -> str:
         f"📝 Not: {res['reason'][:400]}\n"
         f"📡 Veri: OKX SWAP | Binance teyit: {confirm_status}"
     )
-    return base + format_whale_eye_block(res) + format_ict_block(res)
+    return base + format_whale_eye_block(res) + format_ict_block(res) + format_pro_plus_blocks(res)
 
 
 def build_long_signal_message(res: Dict[str, Any]) -> str:
@@ -3315,7 +4288,7 @@ def build_long_signal_message(res: Dict[str, Any]) -> str:
         f"📝 Not: {res['reason'][:400]}\n"
         f"📡 Veri: OKX SWAP + ICT LONG"
     )
-    return base + format_whale_eye_block(res) + format_ict_block(res)
+    return base + format_whale_eye_block(res) + format_ict_block(res) + format_pro_plus_blocks(res)
 
 
 def build_heartbeat_message() -> str:
@@ -3798,24 +4771,15 @@ def volumes(klines: List[List[Any]]) -> List[float]:
 
 
 def ema(values: List[float], period: int) -> List[float]:
-    vals = [safe_float(v) for v in values]
-    if not vals:
+    if not values:
         return []
+    vals = [safe_float(v) for v in values]
     if period <= 1:
         return vals[:]
     alpha = 2.0 / (period + 1.0)
-    out: List[float] = []
-    seed_len = min(period, len(vals))
-    seed = avg(vals[:seed_len], vals[0])
-    prev = seed
-    for i, v in enumerate(vals):
-        if i < seed_len - 1:
-            out.append(avg(vals[: i + 1], v))
-        elif i == seed_len - 1:
-            out.append(seed)
-        else:
-            prev = (v * alpha) + (prev * (1.0 - alpha))
-            out.append(prev)
+    out: List[float] = [vals[0]]
+    for v in vals[1:]:
+        out.append((v * alpha) + (out[-1] * (1.0 - alpha)))
     return out
 
 
@@ -6044,6 +7008,18 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
                 return
             res["reason"] = f"{res.get('reason', '')} | {gate_reason}"[:1400]
 
+        # V5.2.7.4 GERÇEK HAKEM PRO: bütün sinyaller gönderimden önce yerel hafıza + net AL filtresinden geçer.
+        if res.get("stage") == "SIGNAL" and HASAN_AI_HAKEM_ENABLED:
+            hakem_ok, hakem_reason, hakem_score = hasan_ai_hakem_gate(res)
+            res["hasan_ai_reason"] = hakem_reason
+            res["hasan_ai_score"] = hakem_score
+            if not hakem_ok:
+                stats["hasan_ai_block"] = stats.get("hasan_ai_block", 0) + 1
+                logger.info("Gerçek Hakem sinyali susturdu %s %s: %s", direction, symbol, hakem_reason)
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "signal_label": "İÇ TAKİP", "reason": f"{res.get('reason', '')} | {hakem_reason}"})
+                return
+            stats["hasan_ai_pass"] = stats.get("hasan_ai_pass", 0) + 1
+
         if res.get("stage") != "SIGNAL" or str(res.get("signal_label", "")) != expected_label:
             logger.info("%s sinyali susturdu %s: %s", expected_label, symbol, res.get("reason", "-"))
             update_hot_memory(copy.deepcopy(res))
@@ -6137,6 +7113,9 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
                 "entry": res["price"], "stop": res["stop"],
                 "tp1": res["tp1"], "tp2": res["tp2"], "tp3": res["tp3"],
                 "stage": "SIGNAL", "done": False, "sent_ts": time.time(),
+                "hasan_ai": hasan_ai_store_signal_snapshot(res),
+                "position_plan": res.get("position_plan", {}),
+                "pm_sent": {},
             }
             memory.get("hot", {}).pop(symbol, None)
             memory.get("trend_watch", {}).pop(symbol, None)
@@ -6288,15 +7267,26 @@ def evaluate_tp_stop_path(
     tp3: float,
 ) -> Dict[str, Any]:
     """
-    Sinyalden sonraki 1m mumları sırayla tarar.
-    Son fiyata göre karar vermez; önce stop mu TP mi geldi onu bulur.
-    Aynı mumda hem stop hem TP görünüyorsa güvenli tarafta kalıp STOP sayar.
+    Gelişmiş takip:
+    - Stop TP'den önce gelirse STOP.
+    - TP1 önce geldiyse işlem sonucu, kullanıcı tercihiyle TP1'de kapanmış sayılabilir.
+    - Fiyat sonra TP2/TP3'e gittiyse ayrıca sinyal potansiyeli TP2/TP3 olarak raporlanır.
+    - Böylece ZRX gibi TP3'e giden sinyal raporda sadece TP1 diye eksik kalmaz.
     """
     direction = (direction or "SHORT").upper()
     sent_ms = int(sent_ts * 1000)
     checked = 0
+    first_touch = "YOK"
+    first_touch_price = 0.0
+    first_touch_time = "-"
     best_tp = "YOK"
     best_tp_price = 0.0
+    best_tp_time = "-"
+    trade_outcome = "NO_HIT"
+    trade_hit_price = 0.0
+    trade_hit_time = "-"
+    stop_after_tp = False
+    stop_time = "-"
 
     for k in klines:
         start_ms = kline_start_ms(k)
@@ -6311,40 +7301,88 @@ def evaluate_tp_stop_path(
 
         if direction == "LONG":
             stop_hit = stop > 0 and low <= stop
-            tp1_hit = tp1 > 0 and high >= tp1
-            tp2_hit = tp2 > 0 and high >= tp2
-            tp3_hit = tp3 > 0 and high >= tp3
-            if stop_hit and (tp1_hit or tp2_hit or tp3_hit):
-                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Aynı mumda TP ve stop görüldü; güvenli hesapla stop önce kabul edildi."}
-            if stop_hit:
-                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Stop mum taramasında önce geldi."}
-            if tp3_hit:
-                return {"outcome": "TP3", "hit": "TP3", "hit_price": tp3, "hit_time": ts_text, "checked": checked, "note": "TP3 mum taramasında stop öncesi geldi."}
-            if tp2_hit:
-                best_tp, best_tp_price = "TP2", tp2
-                return {"outcome": "TP2", "hit": "TP2", "hit_price": tp2, "hit_time": ts_text, "checked": checked, "note": "TP2 mum taramasında stop öncesi geldi."}
-            if tp1_hit:
-                best_tp, best_tp_price = "TP1", tp1
-                return {"outcome": "TP1", "hit": "TP1", "hit_price": tp1, "hit_time": ts_text, "checked": checked, "note": "TP1 mum taramasında stop öncesi geldi."}
+            hits = []
+            if tp1 > 0 and high >= tp1: hits.append(("TP1", tp1))
+            if tp2 > 0 and high >= tp2: hits.append(("TP2", tp2))
+            if tp3 > 0 and high >= tp3: hits.append(("TP3", tp3))
         else:
             stop_hit = stop > 0 and high >= stop
-            tp1_hit = tp1 > 0 and low <= tp1
-            tp2_hit = tp2 > 0 and low <= tp2
-            tp3_hit = tp3 > 0 and low <= tp3
-            if stop_hit and (tp1_hit or tp2_hit or tp3_hit):
-                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Aynı mumda TP ve stop görüldü; güvenli hesapla stop önce kabul edildi."}
-            if stop_hit:
-                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Stop mum taramasında önce geldi."}
-            if tp3_hit:
-                return {"outcome": "TP3", "hit": "TP3", "hit_price": tp3, "hit_time": ts_text, "checked": checked, "note": "TP3 mum taramasında stop öncesi geldi."}
-            if tp2_hit:
-                return {"outcome": "TP2", "hit": "TP2", "hit_price": tp2, "hit_time": ts_text, "checked": checked, "note": "TP2 mum taramasında stop öncesi geldi."}
-            if tp1_hit:
-                return {"outcome": "TP1", "hit": "TP1", "hit_price": tp1, "hit_time": ts_text, "checked": checked, "note": "TP1 mum taramasında stop öncesi geldi."}
+            hits = []
+            if tp1 > 0 and low <= tp1: hits.append(("TP1", tp1))
+            if tp2 > 0 and low <= tp2: hits.append(("TP2", tp2))
+            if tp3 > 0 and low <= tp3: hits.append(("TP3", tp3))
+
+        if first_touch == "YOK" and stop_hit and hits:
+            return {
+                "outcome": "STOP", "trade_outcome": "STOP", "potential_outcome": "STOP",
+                "hit": "STOP", "hit_price": stop, "hit_time": ts_text,
+                "first_touch": "STOP", "first_touch_time": ts_text, "best_tp": "YOK",
+                "checked": checked, "note": "Aynı ilk mumda TP ve stop görüldü; güvenli hesapla stop önce kabul edildi.",
+            }
+
+        if first_touch == "YOK" and stop_hit and not hits:
+            return {
+                "outcome": "STOP", "trade_outcome": "STOP", "potential_outcome": "STOP",
+                "hit": "STOP", "hit_price": stop, "hit_time": ts_text,
+                "first_touch": "STOP", "first_touch_time": ts_text, "best_tp": "YOK",
+                "checked": checked, "note": "Stop mum taramasında TP seviyelerinden önce geldi.",
+            }
+
+        if hits:
+            highest = sorted(hits, key=lambda x: _tp_rank(x[0]), reverse=True)[0]
+            if _tp_rank(highest[0]) > _tp_rank(best_tp):
+                best_tp, best_tp_price, best_tp_time = highest[0], highest[1], ts_text
+            if first_touch == "YOK":
+                first = sorted(hits, key=lambda x: _tp_rank(x[0]))[0]
+                first_touch, first_touch_price, first_touch_time = first[0], first[1], ts_text
+                if FOLLOWUP_CLOSE_ALL_AT_TP1:
+                    trade_outcome, trade_hit_price, trade_hit_time = "TP1", tp1, ts_text
+                else:
+                    trade_outcome, trade_hit_price, trade_hit_time = highest[0], highest[1], ts_text
+            elif not FOLLOWUP_CLOSE_ALL_AT_TP1 and _tp_rank(highest[0]) > _tp_rank(trade_outcome):
+                trade_outcome, trade_hit_price, trade_hit_time = highest[0], highest[1], ts_text
+
+        if first_touch != "YOK" and stop_hit:
+            stop_after_tp = True
+            stop_time = ts_text
+            if not FOLLOWUP_CLOSE_ALL_AT_TP1:
+                break
 
     last_close = safe_float(klines[-1][4]) if klines else entry
     pnl_pct = pct_change(entry, last_close) if direction == "LONG" else pct_change(entry, last_close) * -1
-    return {"outcome": "NO_HIT", "hit": "YOK", "hit_price": last_close, "hit_time": tr_str(), "checked": checked, "pnl_pct": round(pnl_pct, 2), "note": "Takip süresinde TP/stop görülmedi; sadece güncel PnL yazıldı."}
+    if first_touch != "YOK":
+        potential = best_tp if best_tp != "YOK" else first_touch
+        note = f"İlk temas {first_touch}. Maksimum ulaşılan hedef {potential}."
+        if FOLLOWUP_CLOSE_ALL_AT_TP1:
+            note += " İşlem yönetimi TP1'de tamamı kapat varsayımıyla TP1 sayıldı."
+        if stop_after_tp:
+            note += f" Stop TP sonrası görüldü ({stop_time}); ilk TP önce geldiği için sinyal potansiyeli korunur."
+        return {
+            "outcome": trade_outcome,
+            "trade_outcome": trade_outcome,
+            "potential_outcome": potential,
+            "hit": trade_outcome,
+            "hit_price": trade_hit_price if trade_hit_price > 0 else first_touch_price,
+            "hit_time": trade_hit_time if trade_hit_time != "-" else first_touch_time,
+            "first_touch": first_touch,
+            "first_touch_price": first_touch_price,
+            "first_touch_time": first_touch_time,
+            "best_tp": best_tp,
+            "best_tp_price": best_tp_price,
+            "best_tp_time": best_tp_time,
+            "checked": checked,
+            "pnl_pct": round(pnl_pct, 2),
+            "note": note,
+        }
+
+    return {
+        "outcome": "NO_HIT", "trade_outcome": "NO_HIT", "potential_outcome": "NO_HIT",
+        "hit": "YOK", "hit_price": last_close, "hit_time": tr_str(),
+        "first_touch": "YOK", "first_touch_time": "-", "best_tp": "YOK",
+        "checked": checked, "pnl_pct": round(pnl_pct, 2),
+        "note": "Takip süresinde TP/stop görülmedi; sadece güncel PnL yazıldı.",
+    }
+
 
 async def followup_loop() -> None:
     while True:
@@ -6360,7 +7398,6 @@ async def followup_loop() -> None:
                 sent_ts = safe_float(rec.get("sent_ts", 0))
                 if now_ts - sent_ts < FOLLOWUP_DELAY_SEC:
                     continue
-
                 sym = normalize_symbol(str(rec.get("symbol", key)).replace("LONG:", "").replace("SHORT:", ""))
                 direction = str(rec.get("direction", "SHORT")).upper()
                 entry = safe_float(rec.get("entry", 0))
@@ -6370,35 +7407,44 @@ async def followup_loop() -> None:
                 tp3 = safe_float(rec.get("tp3", 0))
                 if entry <= 0:
                     continue
-
-                k1 = await get_klines(sym, "1m", 180)
+                k1 = await get_klines(sym, "1m", 220)
                 if not k1:
                     continue
-
                 result = evaluate_tp_stop_path(k1, direction, sent_ts, entry, stop, tp1, tp2, tp3)
                 cur = safe_float(k1[-1][4])
                 pnl_pct = pct_change(entry, cur) if direction == "LONG" else pct_change(entry, cur) * -1
                 outcome = str(result.get("outcome", "NO_HIT"))
+                trade_outcome = str(result.get("trade_outcome", outcome))
+                potential = str(result.get("potential_outcome", outcome))
                 hit_price = safe_float(result.get("hit_price", cur))
                 hit_time = str(result.get("hit_time", "-"))
+                first_touch = str(result.get("first_touch", result.get("hit", "-")))
+                first_touch_time = str(result.get("first_touch_time", hit_time))
+                best_tp = str(result.get("best_tp", "YOK"))
 
-                if outcome.startswith("TP"):
-                    title = f"✅ {outcome} GELDİ"
-                elif outcome == "STOP":
+                if trade_outcome.startswith("TP"):
+                    title = f"✅ İŞLEM {trade_outcome}"
+                elif trade_outcome == "STOP":
                     title = "❌ STOP GELDİ"
                 else:
                     title = "⏳ TP/STOP YOK"
 
+                potential_line = f"🏁 Sinyal potansiyeli: {potential}"
+                if potential != trade_outcome:
+                    potential_line += " ⭐" * max(0, _tp_rank(potential))
+
                 text = (
                     f"⏱ 2 SAAT TP/STOP TAKİP\n"
                     f"{title}\n"
-                    f"⏰ Rapor: {tr_str()} | İlk temas: {hit_time}\n"
+                    f"⏰ Rapor: {tr_str()} | İlk temas: {first_touch_time}\n"
                     f"🎯 {sym} | {direction}\n"
                     f"💰 Giriş: {fmt_num(entry)} | Güncel: {fmt_num(cur)}\n"
-                    f"📍 Sonuç fiyatı: {fmt_num(hit_price)}\n"
+                    f"📍 İşlem sonuç fiyatı: {fmt_num(hit_price)}\n"
                     f"📊 Güncel PnL: %{pnl_pct:.2f}\n"
                     f"🛑 Stop: {fmt_num(stop)}\n"
                     f"🎯 TP1: {fmt_num(tp1)} | TP2: {fmt_num(tp2)} | TP3: {fmt_num(tp3)}\n"
+                    f"🏁 İlk temas: {first_touch} | En yüksek TP: {best_tp}\n"
+                    f"{potential_line}\n"
                     f"🧭 Mum tarama: {result.get('checked', 0)} adet 1m mum incelendi.\n"
                     f"Not: {result.get('note', '-')}"
                 )
@@ -6406,11 +7452,13 @@ async def followup_loop() -> None:
                 if ok:
                     stats["followup_sent"] += 1
                     rec["done"] = True
-                    rec["outcome"] = outcome
+                    rec["outcome"] = trade_outcome
+                    rec["potential_outcome"] = potential
                     rec["hit_price"] = hit_price
                     rec["hit_time"] = hit_time
                     rec["final_price"] = cur
                     rec["pnl_pct"] = round(pnl_pct, 2)
+                    hasan_ai_learn_from_followup(rec, trade_outcome)
         except Exception as e:
             logger.exception("followup_loop hata: %s", e)
         await asyncio.sleep(max(60, FOLLOWUP_CHECK_INTERVAL_SEC))
@@ -6631,6 +7679,7 @@ async def post_init(application) -> None:
     asyncio.create_task(symbol_refresh_loop())
     asyncio.create_task(heartbeat_loop())
     asyncio.create_task(followup_loop())
+    asyncio.create_task(position_management_loop())
     asyncio.create_task(save_loop())
     logger.info("Tüm motorlar başlatıldı")
 
@@ -6658,6 +7707,10 @@ def build_app():
     application.add_handler(CommandHandler("whale", cmd_whale))
     application.add_handler(CommandHandler("trend", cmd_trend))
     application.add_handler(CommandHandler("av", cmd_av))
+    application.add_handler(CommandHandler("hakem", cmd_hakem))
+    application.add_handler(CommandHandler("ai_hakem", cmd_hakem))
+    application.add_handler(CommandHandler("backtest", cmd_backtest))
+    application.add_handler(CommandHandler("pozisyon", cmd_pozisyon))
     # Profesyonel AI komutları ana bot seviyesinde garanti eklenir.
     # Böylece embedded handler yüklenmese bile /ai_durum sessiz kalmaz.
     application.add_handler(CommandHandler("ai_durum", cmd_ai_durum_direct))
