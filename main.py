@@ -35,7 +35,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE + V5.2.7.4 GERÇEK HAKEM PRO BİRLEŞİK"
+VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE + HAKEM PRO + HELAL FİLTRE"
 
 # =========================================================
 # ENV / AYARLAR
@@ -415,6 +415,18 @@ BLOCKED_COIN_BASE_KEYWORDS = tuple(
     if x.strip()
 )
 
+# Kullanıcı kararı / helal hassasiyet filtresi:
+# Bu coinler kaldıraç-türev, faiz/yield, NFT/metaverse/gaming gibi şüpheli alanlara yakın görüldüğü için
+# sadece DEFAULT_COINS listesinden çıkarılmaz; COINS env içine yanlışlıkla yazılsa bile zorunlu bloklanır.
+ETHICAL_BLOCKED_COIN_BASE_KEYWORDS = tuple(
+    x.strip().upper()
+    for x in os.getenv(
+        "ETHICAL_BLOCKED_COIN_BASE_KEYWORDS",
+        "DYDX,JUP,COMP,PENDLE,LDO,CRV,BLUR,GALA,SAND,MANA"
+    ).split(",")
+    if x.strip()
+)
+
 MIN_24H_QUOTE_VOLUME = float(os.getenv("MIN_24H_QUOTE_VOLUME", "1200000"))
 KLINE_CACHE_SEC = int(float(os.getenv("KLINE_CACHE_SEC", "12")))
 TICKER_CACHE_SEC = int(float(os.getenv("TICKER_CACHE_SEC", "8")))
@@ -428,18 +440,15 @@ SYMBOL_FAIL_MAX_STREAK = int(float(os.getenv("SYMBOL_FAIL_MAX_STREAK", "2")))
 DEFAULT_COINS = [
     "XRP-USDT-SWAP", "ADA-USDT-SWAP", "TRX-USDT-SWAP", "XLM-USDT-SWAP",
     "HBAR-USDT-SWAP", "ALGO-USDT-SWAP", "VET-USDT-SWAP", "IOTA-USDT-SWAP",
-    "CHZ-USDT-SWAP", "GALA-USDT-SWAP", "ZIL-USDT-SWAP", "ZRX-USDT-SWAP",
-    "DYDX-USDT-SWAP", "SEI-USDT-SWAP", "ARB-USDT-SWAP", "OP-USDT-SWAP",
-    "SAND-USDT-SWAP", "MANA-USDT-SWAP", "FLOW-USDT-SWAP", "ROSE-USDT-SWAP",
+    "CHZ-USDT-SWAP", "ZIL-USDT-SWAP", "ZRX-USDT-SWAP", "SEI-USDT-SWAP", "ARB-USDT-SWAP", "OP-USDT-SWAP", "FLOW-USDT-SWAP", "ROSE-USDT-SWAP",
     "CFX-USDT-SWAP", "SKL-USDT-SWAP", "ANKR-USDT-SWAP", "CELR-USDT-SWAP",
     "IOST-USDT-SWAP", "ONE-USDT-SWAP", "SXP-USDT-SWAP", "CTSI-USDT-SWAP",
-    "RSR-USDT-SWAP", "BLUR-USDT-SWAP", "ACH-USDT-SWAP", "API3-USDT-SWAP",
+    "RSR-USDT-SWAP", "ACH-USDT-SWAP", "API3-USDT-SWAP",
     "GMT-USDT-SWAP", "LRC-USDT-SWAP", "KAVA-USDT-SWAP", "MINA-USDT-SWAP",
     "WOO-USDT-SWAP", "BAND-USDT-SWAP", "STORJ-USDT-SWAP", "MASK-USDT-SWAP",
     "ID-USDT-SWAP", "ARPA-USDT-SWAP", "ONT-USDT-SWAP", "QTUM-USDT-SWAP",
     "BAT-USDT-SWAP", "ENJ-USDT-SWAP", "RVN-USDT-SWAP", "KNC-USDT-SWAP",
-    "COMP-USDT-SWAP", "CRV-USDT-SWAP", "LDO-USDT-SWAP", "PENDLE-USDT-SWAP",
-    "ENA-USDT-SWAP", "PYTH-USDT-SWAP", "JUP-USDT-SWAP", "STRK-USDT-SWAP",
+    "ENA-USDT-SWAP", "PYTH-USDT-SWAP", "STRK-USDT-SWAP",
     "ARKM-USDT-SWAP", "OM-USDT-SWAP", "POLYX-USDT-SWAP", "HOT-USDT-SWAP",
     "DUSK-USDT-SWAP", "HOOK-USDT-SWAP", "PHB-USDT-SWAP", "MAGIC-USDT-SWAP",
 ]
@@ -456,7 +465,8 @@ def coin_base_from_symbol(symbol: str) -> str:
 
 def is_blocked_coin_symbol(symbol: str) -> bool:
     base = coin_base_from_symbol(symbol)
-    return any(key and key in base for key in BLOCKED_COIN_BASE_KEYWORDS)
+    all_blocked = tuple(BLOCKED_COIN_BASE_KEYWORDS) + tuple(ETHICAL_BLOCKED_COIN_BASE_KEYWORDS)
+    return any(key and key in base for key in all_blocked)
 
 
 def filter_coin_universe(symbols: List[str]) -> List[str]:
