@@ -35,7 +35,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE + HAKEM PRO + HELAL FİLTRE"
+VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE + HELAL FİLTRE - OKX OI/FUNDING FIX"
 
 # =========================================================
 # ENV / AYARLAR
@@ -318,30 +318,8 @@ PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_
 PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK", "72"))
 
 # =========================================================
-# V5.2.7.4 GERÇEK HAKEM PRO - BİRLEŞİK KATMAN
+# HASAN AI KATMANI TAMAMEN KALDIRILDI
 # =========================================================
-# DeepSeek/harici AI yerine yerel hafıza + kural hakemi. Dışarı AL geldiyse ciddi olumsuz taraf kalmayacak.
-HASAN_AI_HAKEM_ENABLED = os.getenv("HASAN_AI_HAKEM_ENABLED", "true").lower() == "true"
-HASAN_AI_PRO_MODE_ENABLED = os.getenv("HASAN_AI_PRO_MODE_ENABLED", "true").lower() == "true"
-HASAN_AI_PRO_ZERO_NEGATIVE_SIGNAL = os.getenv("HASAN_AI_PRO_ZERO_NEGATIVE_SIGNAL", "true").lower() == "true"
-HASAN_AI_PRO_BLOCK_RISKY_CLOSE = os.getenv("HASAN_AI_PRO_BLOCK_RISKY_CLOSE", "true").lower() == "true"
-HASAN_AI_PRO_MIN_15M_SHORT_SCORE = float(os.getenv("HASAN_AI_PRO_MIN_15M_SHORT_SCORE", "1.20"))
-HASAN_AI_PRO_MIN_15M_LONG_SCORE = float(os.getenv("HASAN_AI_PRO_MIN_15M_LONG_SCORE", "0.80"))
-HASAN_AI_PRO_MIN_ICT_EDGE = float(os.getenv("HASAN_AI_PRO_MIN_ICT_EDGE", "1.50"))
-HASAN_AI_PRO_MIN_QUALITY = float(os.getenv("HASAN_AI_PRO_MIN_QUALITY", "6.0"))
-HASAN_AI_PRO_MIN_RR = float(os.getenv("HASAN_AI_PRO_MIN_RR", "1.05"))
-HASAN_AI_PRO_BAD_PATTERN_SCORE = float(os.getenv("HASAN_AI_PRO_BAD_PATTERN_SCORE", "2.40"))
-HASAN_AI_PRO_GOOD_PATTERN_SCORE = float(os.getenv("HASAN_AI_PRO_GOOD_PATTERN_SCORE", "1.00"))
-HASAN_AI_PRO_MEMORY_BLOCK_SCORE = float(os.getenv("HASAN_AI_PRO_MEMORY_BLOCK_SCORE", "3.00"))
-HASAN_AI_PRO_HARD_BLOCK_SCORE = float(os.getenv("HASAN_AI_PRO_HARD_BLOCK_SCORE", "4.50"))
-HASAN_AI_PRO_MIN_STRICT_SAMPLES = int(float(os.getenv("HASAN_AI_PRO_MIN_STRICT_SAMPLES", "3")))
-HASAN_AI_PRO_STOP_RATE_BLOCK = float(os.getenv("HASAN_AI_PRO_STOP_RATE_BLOCK", "0.58"))
-HASAN_AI_PRO_TP2PLUS_GOOD_RATE = float(os.getenv("HASAN_AI_PRO_TP2PLUS_GOOD_RATE", "0.45"))
-HASAN_AI_PRO_STORE_MAX_POTENTIAL = os.getenv("HASAN_AI_PRO_STORE_MAX_POTENTIAL", "true").lower() == "true"
-HASAN_AI_MIN_COIN_SAMPLES = int(float(os.getenv("HASAN_AI_MIN_COIN_SAMPLES", "3")))
-HASAN_AI_BAD_COIN_STOP_RATE = float(os.getenv("HASAN_AI_BAD_COIN_STOP_RATE", "0.67"))
-HASAN_AI_MAX_RECENT_STOPS = int(float(os.getenv("HASAN_AI_MAX_RECENT_STOPS", "2")))
-HASAN_AI_RECENT_WINDOW = int(float(os.getenv("HASAN_AI_RECENT_WINDOW", "20")))
 # Kullanıcı tercihi: TP1'de tamamı kapatılabilir; ama sinyal kalitesi için TP2/TP3 potansiyeli ayrıca raporlanır.
 FOLLOWUP_CLOSE_ALL_AT_TP1 = os.getenv("FOLLOWUP_CLOSE_ALL_AT_TP1", "true").lower() == "true"
 # Net AL kuralı: riskli/çelişkili mesaj dışarı çıkmasın.
@@ -531,7 +509,7 @@ symbol_fail_state: Dict[str, Dict[str, Any]] = {}
 
 # V6 YENI: OI / Funding / CVD cache'leri
 oi_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
-funding_cache: Dict[str, Tuple[float, float]] = {}
+funding_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 cvd_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 spoofing_memory: Dict[str, Dict[str, Any]] = {}
 
@@ -625,9 +603,6 @@ stats: Dict[str, Any] = {
     "ai_auto_final_block": 0,
     "ai_auto_late_short_block": 0,
     "ai_auto_late_long_block": 0,
-    "hasan_ai_pass": 0,
-    "hasan_ai_block": 0,
-    "hasan_ai_learn": 0,
     "regime_pass": 0,
     "regime_block": 0,
     "macro_pass": 0,
@@ -717,7 +692,6 @@ def ensure_memory_shape() -> None:
     memory.setdefault("daily_short_sent", {})
     memory.setdefault("daily_long_sent", {})
     memory.setdefault("ai_auto_sent_lock", {})
-    memory.setdefault("hasan_ai", {"patterns": {}, "coins": {}, "recent": [], "potential_patterns": {}})
     memory.setdefault("last_signal_ts", 0.0)
     memory.setdefault("last_signal_attempt_ts", 0.0)
     memory.setdefault("last_diag_ts", 0.0)
@@ -894,56 +868,168 @@ def _binance_fapi_get(path: str, params: Optional[Dict[str, Any]] = None, signed
 
 
 async def get_open_interest(symbol: str) -> Dict[str, Any]:
-    """Binance Futures Open Interest verisi"""
-    if not OI_ENGINE_ENABLED:
-        return {"enabled": False, "oi": 0, "oi_change_pct": 0}
+    """Open Interest verisi.
 
-    symbol = normalize_binance_symbol(symbol)
-    cache_key = f"OI:{symbol}"
+    Önce Binance Futures denenir. Binance verisi gelmezse OKX public open-interest
+    endpointine otomatik düşer. Böylece BTC-USDT-SWAP gibi OKX sembollerinde Whale Eye
+    OI kör kalmaz.
+    """
+    if not OI_ENGINE_ENABLED:
+        return {"enabled": False, "source": "KAPALI", "oi": 0, "oi_change_pct": 0, "reason": "OI motoru kapalı"}
+
+    okx_symbol = normalize_symbol(symbol)
+    binance_symbol = normalize_binance_symbol(symbol)
+    cache_key = f"OI:{okx_symbol}"
     cached = oi_cache.get(cache_key)
     now_ts = time.time()
     if cached and now_ts - cached[0] <= OI_CACHE_SEC:
         return cached[1]
 
+    errors: List[str] = []
+
+    # 1) Binance USD-M Futures OI
     try:
         data = await asyncio.to_thread(
             _binance_fapi_get,
             "/fapi/v1/openInterest",
-            {"symbol": symbol}
+            {"symbol": binance_symbol}
         )
         oi = safe_float(data.get("openInterest", 0))
-        result = {"enabled": True, "oi": oi, "timestamp": now_ts}
-        oi_cache[cache_key] = (now_ts, result)
-        return result
+        if oi > 0:
+            result = {
+                "enabled": True,
+                "source": "BINANCE_FAPI",
+                "oi": oi,
+                "timestamp": now_ts,
+                "reason": "Binance Futures OI okundu",
+            }
+            oi_cache[cache_key] = (now_ts, result)
+            return result
+        errors.append("Binance OI boş/0 döndü")
     except Exception as e:
-        logger.warning("Binance OI alınamadı %s: %s", symbol, e)
-        return {"enabled": False, "oi": 0, "oi_change_pct": 0}
+        err = f"Binance OI hata: {type(e).__name__}: {str(e)[:160]}"
+        errors.append(err)
+        logger.warning("%s %s", err, binance_symbol)
+
+    # 2) OKX SWAP OI fallback
+    try:
+        data = await asyncio.to_thread(
+            _okx_get,
+            "/api/v5/public/open-interest",
+            {"instType": OKX_INST_TYPE, "instId": okx_symbol},
+        )
+        row = data[0] if data else {}
+        oi = safe_float(row.get("oi", 0))
+        oi_ccy = safe_float(row.get("oiCcy", 0))
+        oi_usd = safe_float(row.get("oiUsd", 0))
+        chosen_oi = oi if oi > 0 else (oi_ccy if oi_ccy > 0 else oi_usd)
+        if chosen_oi > 0:
+            row_ts = safe_float(row.get("ts", 0))
+            result = {
+                "enabled": True,
+                "source": "OKX_PUBLIC",
+                "oi": chosen_oi,
+                "oi_contracts": oi,
+                "oi_ccy": oi_ccy,
+                "oi_usd": oi_usd,
+                "timestamp": (row_ts / 1000.0) if row_ts > 10_000_000_000 else now_ts,
+                "reason": "Binance OI yoktu; OKX open-interest fallback okundu",
+                "fallback_errors": " | ".join(errors[:3]),
+            }
+            oi_cache[cache_key] = (now_ts, result)
+            return result
+        errors.append("OKX OI boş/0 döndü")
+    except Exception as e:
+        err = f"OKX OI hata: {type(e).__name__}: {str(e)[:160]}"
+        errors.append(err)
+        logger.warning("%s %s", err, okx_symbol)
+
+    return {
+        "enabled": False,
+        "source": "VERI_YOK",
+        "oi": 0,
+        "oi_change_pct": 0,
+        "reason": "OI verisi alınamadı: " + " | ".join(errors[:4]),
+    }
 
 
-async def get_funding_rate(symbol: str) -> float:
-    """Binance Futures Funding Rate"""
+async def get_funding_rate(symbol: str) -> Dict[str, Any]:
+    """Funding rate verisi.
+
+    Önce Binance Futures premiumIndex denenir. Binance verisi gelmezse OKX public
+    funding-rate endpointine düşer. Oran yüzde olarak döner: 0.0100 = %0.0100.
+    """
     if not FUNDING_ENGINE_ENABLED:
-        return 0.0
+        return {"enabled": False, "source": "KAPALI", "rate": 0.0, "reason": "Funding motoru kapalı"}
 
-    symbol = normalize_binance_symbol(symbol)
-    cache_key = f"FUNDING:{symbol}"
+    okx_symbol = normalize_symbol(symbol)
+    binance_symbol = normalize_binance_symbol(symbol)
+    cache_key = f"FUNDING:{okx_symbol}"
     cached = funding_cache.get(cache_key)
     now_ts = time.time()
     if cached and now_ts - cached[0] <= FUNDING_CACHE_SEC:
         return cached[1]
 
+    errors: List[str] = []
+
+    # 1) Binance funding
     try:
         data = await asyncio.to_thread(
             _binance_fapi_get,
             "/fapi/v1/premiumIndex",
-            {"symbol": symbol}
+            {"symbol": binance_symbol}
         )
-        rate = safe_float(data.get("lastFundingRate", 0)) * 100.0
-        funding_cache[cache_key] = (now_ts, rate)
-        return rate
+        if isinstance(data, dict) and "lastFundingRate" in data:
+            rate = safe_float(data.get("lastFundingRate", 0)) * 100.0
+            result = {
+                "enabled": True,
+                "source": "BINANCE_FAPI",
+                "rate": rate,
+                "next_funding_time": safe_float(data.get("nextFundingTime", 0)),
+                "mark_price": safe_float(data.get("markPrice", 0)),
+                "reason": "Binance Futures funding okundu",
+            }
+            funding_cache[cache_key] = (now_ts, result)
+            return result
+        errors.append("Binance funding boş/alan yok")
     except Exception as e:
-        logger.warning("Binance Funding alınamadı %s: %s", symbol, e)
-        return 0.0
+        err = f"Binance Funding hata: {type(e).__name__}: {str(e)[:160]}"
+        errors.append(err)
+        logger.warning("%s %s", err, binance_symbol)
+
+    # 2) OKX funding fallback
+    try:
+        data = await asyncio.to_thread(
+            _okx_get,
+            "/api/v5/public/funding-rate",
+            {"instId": okx_symbol},
+        )
+        row = data[0] if data else {}
+        if row and "fundingRate" in row:
+            rate = safe_float(row.get("fundingRate", 0)) * 100.0
+            result = {
+                "enabled": True,
+                "source": "OKX_PUBLIC",
+                "rate": rate,
+                "next_funding_time": safe_float(row.get("nextFundingTime", 0)),
+                "funding_time": safe_float(row.get("fundingTime", 0)),
+                "reason": "Binance funding yoktu; OKX funding-rate fallback okundu",
+                "fallback_errors": " | ".join(errors[:3]),
+            }
+            funding_cache[cache_key] = (now_ts, result)
+            return result
+        errors.append("OKX funding boş/alan yok")
+    except Exception as e:
+        err = f"OKX Funding hata: {type(e).__name__}: {str(e)[:160]}"
+        errors.append(err)
+        logger.warning("%s %s", err, okx_symbol)
+
+    return {
+        "enabled": False,
+        "source": "VERI_YOK",
+        "rate": 0.0,
+        "reason": "Funding verisi alınamadı: " + " | ".join(errors[:4]),
+    }
 # =========================================================
 # V6 WHALE EYE MOTORLARI
 # =========================================================
@@ -969,7 +1055,17 @@ async def analyze_whale_eye_open_interest(
 
     oi_data = await get_open_interest(symbol)
     if not oi_data.get("enabled"):
-        return {"enabled": False, "score": 0, "divergence_type": "VERI_YOK", "reason": "OI verisi alınamadı"}
+        return {
+            "enabled": False,
+            "score": 0,
+            "divergence_type": "VERI_YOK",
+            "reason": oi_data.get("reason", "OI verisi alınamadı"),
+            "source": oi_data.get("source", "VERI_YOK"),
+            "current_oi": 0,
+            "prev_oi": 0,
+            "oi_change_pct": 0,
+            "price_change_pct": 0,
+        }
 
     # Önceki OI değerini memory'den al
     oi_memory_key = f"oi_history:{symbol}"
@@ -990,7 +1086,8 @@ async def analyze_whale_eye_open_interest(
             "enabled": True,
             "score": 0,
             "divergence_type": "BEKLIYOR",
-            "reason": f"OI takip başladı. Güncel OI: {current_oi:,.0f}",
+            "reason": f"OI takip başladı. Güncel OI: {current_oi:,.0f} | Kaynak: {oi_data.get('source', '-')}",
+            "source": oi_data.get("source", "-"),
             "current_oi": current_oi,
             "prev_oi": 0,
             "oi_change_pct": 0,
@@ -1047,7 +1144,8 @@ async def analyze_whale_eye_open_interest(
         "enabled": True,
         "score": round(score, 2),
         "divergence_type": divergence_type,
-        "reason": " | ".join(reasons) if reasons else "OI fiyat uyumlu, balina izi yok",
+        "reason": (" | ".join(reasons) if reasons else "OI fiyat uyumlu, balina izi yok") + f" | Kaynak: {oi_data.get('source', '-')}",
+        "source": oi_data.get("source", "-"),
         "current_oi": current_oi,
         "prev_oi": prev_oi,
         "oi_change_pct": round(oi_change_pct, 2),
@@ -1071,10 +1169,19 @@ async def analyze_whale_eye_funding(
     if not FUNDING_ENGINE_ENABLED:
         return {"enabled": False, "score": 0, "funding_signal": "KAPALI", "reason": "Funding motoru kapalı"}
 
-    rate = await get_funding_rate(symbol)
+    funding_data = await get_funding_rate(symbol)
+    if not funding_data.get("enabled"):
+        return {
+            "enabled": False,
+            "score": 0,
+            "funding_signal": "VERI_YOK",
+            "funding_rate": 0.0,
+            "source": funding_data.get("source", "VERI_YOK"),
+            "reason": funding_data.get("reason", "Funding verisi alınamadı"),
+        }
 
-    if rate == 0.0:
-        return {"enabled": False, "score": 0, "funding_signal": "VERI_YOK", "reason": "Funding verisi alınamadı"}
+    rate = safe_float(funding_data.get("rate", 0.0))
+    source = str(funding_data.get("source", "-"))
 
     score = 0.0
     signal = "NÖTR"
@@ -1118,7 +1225,9 @@ async def analyze_whale_eye_funding(
         "score": round(score, 2),
         "funding_rate": round(rate, 4),
         "funding_signal": signal,
-        "reason": " | ".join(reasons) if reasons else f"Funding nötr %{rate:.4f}"
+        "source": source,
+        "next_funding_time": funding_data.get("next_funding_time", 0),
+        "reason": (" | ".join(reasons) if reasons else f"Funding nötr %{rate:.4f}") + f" | Kaynak: {source}",
     }
 
 
@@ -3266,373 +3375,6 @@ def _tp_rank(level: str) -> int:
     return {"STOP": -1, "NÖTR": 0, "NO_HIT": 0, "YOK": 0, "TP1": 1, "TP2": 2, "TP3": 3}.get(str(level).upper(), 0)
 
 
-def hasan_ai_memory() -> Dict[str, Any]:
-    ensure_memory_shape()
-    ai = memory.setdefault("hasan_ai", {"patterns": {}, "coins": {}, "recent": [], "potential_patterns": {}})
-    ai.setdefault("patterns", {})
-    ai.setdefault("coins", {})
-    ai.setdefault("recent", [])
-    ai.setdefault("potential_patterns", {})
-    return ai
-
-
-def hasan_ai_signal_features(payload: Dict[str, Any]) -> Dict[str, Any]:
-    direction = str(payload.get("direction", "SHORT")).upper()
-    symbol = normalize_symbol(str(payload.get("symbol", "")))
-    base = coin_base_from_symbol(symbol)
-    ict = payload.get("ict") if isinstance(payload.get("ict"), dict) else {}
-    close_gate = payload.get("close_confirm_gate") if isinstance(payload.get("close_confirm_gate"), dict) else payload.get("long_close_gate") if isinstance(payload.get("long_close_gate"), dict) else {}
-    inv = payload.get("invisible_face") if isinstance(payload.get("invisible_face"), dict) else {}
-    flow = payload.get("trade_flow") if isinstance(payload.get("trade_flow"), dict) else {}
-    whale = payload.get("whale_eye") if isinstance(payload.get("whale_eye"), dict) else {}
-    prof = payload.get("professional_ai") if isinstance(payload.get("professional_ai"), dict) else {}
-
-    short_score = safe_float(ict.get("short_pro_score", payload.get("ai_short_score", 0)), 0)
-    long_score = safe_float(ict.get("long_pro_score", payload.get("ai_long_score", 0)), 0)
-    edge = short_score - long_score if direction == "SHORT" else long_score - short_score
-    pump10 = safe_float(payload.get("pump_10m", 0), 0)
-    pump20 = safe_float(payload.get("pump_20m", 0), 0)
-    pump1h = safe_float(payload.get("pump_1h", 0), 0)
-    pump_ref = max(abs(pump20), abs(pump1h))
-    vol1 = safe_float(payload.get("vol_ratio_1m", 0), 0)
-    vol5 = safe_float(payload.get("vol_ratio_5m", 0), 0)
-    vol_ref = max(vol1, vol5)
-    rr = safe_float(payload.get("rr", 0), 0)
-    quality = safe_float(payload.get("quality_score", 0), 0)
-    breakdown = safe_float(payload.get("breakdown_score", 0), 0)
-    score5 = safe_float(close_gate.get("score5", 0), 0)
-    score15 = safe_float(close_gate.get("score15", 0), 0)
-    close_class = str(close_gate.get("class", "NA")).upper()
-    buy_to_sell = safe_float(flow.get("buy_to_sell", 0), 0)
-    sell_to_buy = safe_float(flow.get("sell_to_buy", 0), 0)
-    ai_risk = safe_float(payload.get("ai_risk", prof.get("risk", 0)), 0)
-    ai_confidence = safe_float(payload.get("ai_confidence", prof.get("confidence", 0)), 0)
-    whale_score = safe_float(whale.get("total_score", 0), 0)
-    whale_conf = str(whale.get("whale_confidence", "NA")).upper()
-
-    return {
-        "symbol": symbol,
-        "base": base,
-        "direction": direction,
-        "is_ai_auto": bool(payload.get("ai_auto_promoted")),
-        "ict_enabled": bool(ict.get("enabled")),
-        "ict_bias": str(ict.get("structure_bias", "NA")).upper(),
-        "short_ict": round(short_score, 2),
-        "long_ict": round(long_score, 2),
-        "ict_edge": round(edge, 2),
-        "ict_edge_bucket": _bucket_float(edge, [-1.0, 0.0, 1.5, 3.0, 6.0], ["TERS", "ZAYIF", "SINIRDA", "IYI", "GUCLU", "COK_GUCLU"]),
-        "close_class": close_class,
-        "score5": round(score5, 2),
-        "score15": round(score15, 2),
-        "score15_bucket": _bucket_float(score15, [0, 1.2, 2.6, 4.0, 6.0], ["NEGATIF", "COK_ZAYIF", "ZAYIF", "ORTA", "IYI", "GUCLU"]),
-        "inv_class": str(payload.get("invisible_class", inv.get("class", "NA"))).upper(),
-        "inv_score": round(safe_float(payload.get("invisible_score", inv.get("score", 0)), 0), 2),
-        "inv_decision": str(payload.get("invisible_decision", inv.get("decision", "NA"))).upper(),
-        "top_early": bool(payload.get("top_early_short") or inv.get("top_early_short")),
-        "top_exit_score": round(safe_float(payload.get("top_exit_score", inv.get("top_exit_score", 0)), 0), 2),
-        "peak_age": int(safe_float(payload.get("peak_age_candles", inv.get("peak_age_candles", 999)), 999)),
-        "drop_from_peak": round(safe_float(inv.get("drop_from_peak_pct", payload.get("drop_from_peak_pct", 999)), 999), 2),
-        "pump10": round(pump10, 2),
-        "pump20": round(pump20, 2),
-        "pump1h": round(pump1h, 2),
-        "pump_bucket": _bucket_float(pump_ref, [0.5, 1.2, 2.5, 5.0], ["YOK", "AZ", "ORTA", "GUCLU", "COK_GUCLU"]),
-        "rsi1": round(safe_float(payload.get("rsi1", 50), 50), 2),
-        "rsi5": round(safe_float(payload.get("rsi5", 50), 50), 2),
-        "rsi15": round(safe_float(payload.get("rsi15", 50), 50), 2),
-        "vol1": round(vol1, 2),
-        "vol5": round(vol5, 2),
-        "vol_bucket": _bucket_float(vol_ref, [0.35, 0.8, 1.5, 3.0], ["OLU", "ZAYIF", "NORMAL", "GUCLU", "COK_GUCLU"]),
-        "flow_buy_to_sell": round(buy_to_sell, 3),
-        "flow_sell_to_buy": round(sell_to_buy, 3),
-        "flow_reliable": bool(payload.get("flow_reliable", True)),
-        "rr": round(rr, 2),
-        "rr_bucket": _bucket_float(rr, [0.8, 1.05, 1.4, 2.0], ["KOTU", "SINIRDA", "NORMAL", "IYI", "COK_IYI"]),
-        "quality": round(quality, 2),
-        "breakdown": round(breakdown, 2),
-        "bos_down": bool(ict.get("bos_down") or ict.get("choch_down") or ict.get("mss_down")),
-        "bos_up": bool(ict.get("bos_up") or ict.get("choch_up") or ict.get("mss_up")),
-        "bearish_fvg": bool(ict.get("bearish_fvg_active")),
-        "bullish_fvg": bool(ict.get("bullish_fvg_active")),
-        "bearish_ob": bool(ict.get("bearish_ob_near")),
-        "bullish_ob": bool(ict.get("bullish_ob_near")),
-        "whale_score": whale_score,
-        "whale_conf": whale_conf,
-        "ai_risk": round(ai_risk, 2),
-        "ai_confidence": round(ai_confidence, 2),
-    }
-
-
-def hasan_ai_pattern_keys(features: Dict[str, Any]) -> List[str]:
-    d = features.get("direction", "NA")
-    return [
-        f"DIR={d}|ICT={features.get('ict_bias')}|EDGE={features.get('ict_edge_bucket')}|CLOSE={features.get('close_class')}|15M={features.get('score15_bucket')}",
-        f"DIR={d}|INV={features.get('inv_class')}|PUMP={features.get('pump_bucket')}|VOL={features.get('vol_bucket')}|RR={features.get('rr_bucket')}",
-        f"DIR={d}|COIN={features.get('base')}",
-        f"DIR={d}|ICT={features.get('ict_bias')}|BOSD={features.get('bos_down')}|BOSU={features.get('bos_up')}",
-        f"DIR={d}|EDGE={features.get('ict_edge_bucket')}|QUAL={_bucket_float(safe_float(features.get('quality', 0)), [4, 6, 7.5, 9], ['COK_ZAYIF','ZAYIF','ORTA','IYI','COK_IYI'])}|BREAK={_bucket_float(safe_float(features.get('breakdown', 0)), [3, 7.2, 10, 15], ['YOK','ZAYIF','ORTA','IYI','GUCLU'])}",
-    ]
-
-
-def _hasan_ai_stats_summary(rec: Dict[str, Any]) -> Tuple[int, float, float]:
-    total = int(safe_float(rec.get("total", 0), 0))
-    if total <= 0:
-        return 0, 0.0, 0.0
-    stops = int(safe_float(rec.get("STOP", 0), 0))
-    wins = int(safe_float(rec.get("TP1", 0), 0)) + int(safe_float(rec.get("TP2", 0), 0)) + int(safe_float(rec.get("TP3", 0), 0))
-    return total, stops / total, wins / total
-
-
-def _hasan_ai_tp2plus_rate(rec: Dict[str, Any]) -> float:
-    total = int(safe_float(rec.get("total", 0), 0))
-    if total <= 0:
-        return 0.0
-    return (int(safe_float(rec.get("TP2", 0), 0)) + int(safe_float(rec.get("TP3", 0), 0))) / total
-
-
-def hasan_ai_rule_audit(features: Dict[str, Any]) -> Tuple[List[str], List[str], float, float]:
-    hard: List[str] = []
-    soft: List[str] = []
-    risk = 0.0
-    good = 0.0
-    d = str(features.get("direction", "SHORT")).upper()
-    bias = str(features.get("ict_bias", "NA")).upper()
-    edge = safe_float(features.get("ict_edge", 0), 0)
-    close_class = str(features.get("close_class", "NA")).upper()
-    score15 = safe_float(features.get("score15", 0), 0)
-    quality = safe_float(features.get("quality", 0), 0)
-    rr = safe_float(features.get("rr", 0), 0)
-    vol1 = safe_float(features.get("vol1", 0), 0)
-    vol5 = safe_float(features.get("vol5", 0), 0)
-    breakdown = safe_float(features.get("breakdown", 0), 0)
-    is_ai_auto = bool(features.get("is_ai_auto"))
-
-    # AI otomatik sinyal final gate'ten geçmiş olsa bile ciddi olumsuzları tekrar kontrol et.
-    if HASAN_AI_PRO_ZERO_NEGATIVE_SIGNAL:
-        if close_class in ("RISKY", "WAIT") and HASAN_AI_PRO_BLOCK_RISKY_CLOSE:
-            hard.append(f"kapanış {close_class}")
-        if close_class != "NA" and STRICT_BLOCK_NEGATIVE_15M_SCORE and score15 < 0:
-            hard.append(f"15m skor negatif {score15:.1f}")
-
-    if rr < HASAN_AI_PRO_MIN_RR:
-        hard.append(f"RR düşük {rr:.2f}")
-    # AI auto payload'larında kalite skoru düşük gelebilir; orada risk/confidence ana ölçüdür.
-    if not is_ai_auto and quality > 0 and quality < HASAN_AI_PRO_MIN_QUALITY:
-        hard.append(f"kalite düşük {quality:.1f}")
-    if is_ai_auto:
-        if safe_float(features.get("ai_risk", 0), 0) > PRO_AI_AUTOSIGNAL_MAX_RISK:
-            hard.append(f"AI risk yüksek {features.get('ai_risk')}")
-        if safe_float(features.get("ai_confidence", 0), 0) < PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:
-            hard.append(f"AI güven düşük {features.get('ai_confidence')}")
-
-    if features.get("ict_enabled") or safe_float(features.get("short_ict", 0)) or safe_float(features.get("long_ict", 0)):
-        if d == "SHORT":
-            if edge < HASAN_AI_PRO_MIN_ICT_EDGE:
-                hard.append(f"SHORT ICT üstünlüğü zayıf {edge:.1f}")
-            if bias == "BULLISH" and not features.get("bos_down"):
-                hard.append("BULLISH yapı + BOS/CHOCH/MSS aşağı yok")
-            if safe_float(features.get("long_ict", 0)) >= safe_float(features.get("short_ict", 0)):
-                hard.append("LONG ICT shorttan güçlü/eşit")
-            if max(safe_float(features.get("pump20", 0)), safe_float(features.get("pump1h", 0))) < 0.65 and not features.get("top_early") and features.get("whale_conf") not in ("YÜKSEK", "ÇOK_YÜKSEK", "AI"):
-                soft.append("SHORT pump/tepe bağlamı zayıf")
-                risk += 1.2
-        else:
-            if edge < HASAN_AI_PRO_MIN_ICT_EDGE:
-                hard.append(f"LONG ICT üstünlüğü zayıf {edge:.1f}")
-            if bias == "BEARISH" and not features.get("bos_up"):
-                hard.append("BEARISH yapı + BOS/CHOCH/MSS yukarı yok")
-            if safe_float(features.get("short_ict", 0)) >= safe_float(features.get("long_ict", 0)):
-                hard.append("SHORT ICT longtan güçlü/eşit")
-            if not features.get("flow_reliable") and safe_float(features.get("flow_buy_to_sell", 0)) >= 40:
-                hard.append("hacim ölü iken alış flow oranı şişmiş")
-
-    if vol1 < 0.35 and vol5 < 0.35:
-        soft.append(f"hacim zayıf 1m x{vol1:.2f}, 5m x{vol5:.2f}")
-        risk += 1.0
-    if breakdown >= 10:
-        good += 0.9
-    if edge >= 3.0:
-        good += 1.0
-    if quality >= 7.5:
-        good += 0.8
-    if close_class == "CLEAN" and score15 >= 2.6:
-        good += 0.8
-    if features.get("whale_conf") in ("YÜKSEK", "ÇOK_YÜKSEK"):
-        good += 0.7
-
-    risk += len(hard) * 2.0 + len(soft) * 0.7
-    return hard, soft, round(risk, 2), round(good, 2)
-
-
-def hasan_ai_memory_score(features: Dict[str, Any]) -> Tuple[float, float, List[str]]:
-    ai = hasan_ai_memory()
-    patterns = ai.get("patterns", {})
-    memory_risk = 0.0
-    memory_good = 0.0
-    reasons: List[str] = []
-    for key in hasan_ai_pattern_keys(features):
-        total, stop_rate, win_rate = _hasan_ai_stats_summary(patterns.get(key, {}))
-        tp2plus = _hasan_ai_tp2plus_rate(patterns.get(key, {}))
-        if total >= HASAN_AI_PRO_MIN_STRICT_SAMPLES:
-            if stop_rate >= HASAN_AI_PRO_STOP_RATE_BLOCK and win_rate < 0.50:
-                memory_risk += HASAN_AI_PRO_BAD_PATTERN_SCORE
-                reasons.append(f"kötü pattern stop %{stop_rate*100:.0f}/{total}")
-            elif win_rate >= 0.70 and tp2plus >= HASAN_AI_PRO_TP2PLUS_GOOD_RATE:
-                memory_good += HASAN_AI_PRO_GOOD_PATTERN_SCORE
-                reasons.append(f"iyi pattern TP %{win_rate*100:.0f}, TP2+ %{tp2plus*100:.0f}/{total}")
-
-    coin_key = f"{features.get('direction')}:{features.get('base')}"
-    total, stop_rate, win_rate = _hasan_ai_stats_summary(ai.get("coins", {}).get(coin_key, {}))
-    if total >= HASAN_AI_MIN_COIN_SAMPLES and stop_rate >= HASAN_AI_BAD_COIN_STOP_RATE:
-        memory_risk += 2.2
-        reasons.append(f"coin hafızası kötü {features.get('base')} stop %{stop_rate*100:.0f}/{total}")
-    elif total >= HASAN_AI_MIN_COIN_SAMPLES and win_rate >= 0.72:
-        memory_good += 0.8
-        reasons.append(f"coin hafızası iyi {features.get('base')} win %{win_rate*100:.0f}/{total}")
-
-    recent = list(ai.get("recent", []))[-HASAN_AI_RECENT_WINDOW:]
-    same_stops = [x for x in recent if x.get("base") == features.get("base") and x.get("direction") == features.get("direction") and x.get("outcome") == "STOP"]
-    if len(same_stops) >= HASAN_AI_MAX_RECENT_STOPS:
-        memory_risk += 2.0
-        reasons.append(f"son hafızada aynı coin/yön {len(same_stops)} stop")
-    return round(memory_risk, 2), round(memory_good, 2), reasons[:6]
-
-
-def hasan_ai_hakem_gate(payload: Dict[str, Any]) -> Tuple[bool, str, float]:
-    if not HASAN_AI_HAKEM_ENABLED:
-        return True, "Gerçek Hakem kapalı.", 0.0
-    f = hasan_ai_signal_features(payload)
-    hard, soft, rule_risk, rule_good = hasan_ai_rule_audit(f)
-    mem_risk, mem_good, mem_reasons = hasan_ai_memory_score(f)
-    final_score = round((rule_risk + mem_risk) - (rule_good + mem_good), 2)
-    if hard:
-        return False, "GERÇEK HAKEM BLOK: " + " | ".join(hard[:5]), final_score
-    if mem_risk >= HASAN_AI_PRO_MEMORY_BLOCK_SCORE:
-        return False, "GERÇEK HAKEM HAFIZA BLOK: " + " | ".join(mem_reasons[:5]), final_score
-    if final_score >= HASAN_AI_PRO_HARD_BLOCK_SCORE:
-        reasons = soft + mem_reasons
-        return False, "GERÇEK HAKEM RİSK BLOK: " + " | ".join(reasons[:5]), final_score
-    pass_notes = []
-    if f.get("close_class") == "CLEAN":
-        pass_notes.append("kapanış temiz")
-    if safe_float(f.get("ict_edge", 0)) >= HASAN_AI_PRO_MIN_ICT_EDGE:
-        pass_notes.append(f"ICT yön üstün {safe_float(f.get('ict_edge', 0)):.1f}")
-    if f.get("quality", 0) >= HASAN_AI_PRO_MIN_QUALITY:
-        pass_notes.append(f"kalite {f.get('quality')}")
-    if mem_good > 0:
-        pass_notes.append("hafıza destekli")
-    if f.get("whale_conf") in ("YÜKSEK", "ÇOK_YÜKSEK"):
-        pass_notes.append("Whale Eye destekli")
-    return True, "GERÇEK HAKEM GEÇTİ: " + (" | ".join(pass_notes[:5]) if pass_notes else "ana risk görülmedi"), final_score
-
-
-def hasan_ai_store_signal_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
-    f = hasan_ai_signal_features(payload)
-    return {
-        "features": f,
-        "keys": hasan_ai_pattern_keys(f),
-        "gate_reason": payload.get("hasan_ai_reason", "-"),
-        "gate_score": payload.get("hasan_ai_score", 0),
-        "sent_ts": time.time(),
-    }
-
-
-def _hasan_ai_update_bucket(bucket: Dict[str, Any], outcome: str, symbol: str) -> None:
-    bucket["total"] = int(safe_float(bucket.get("total", 0), 0)) + 1
-    for k in ("TP1", "TP2", "TP3", "STOP", "NÖTR"):
-        bucket.setdefault(k, 0)
-    bucket[outcome] = int(safe_float(bucket.get(outcome, 0), 0)) + 1
-    bucket.setdefault("last", []).append({"ts": time.time(), "outcome": outcome, "symbol": symbol})
-    bucket["last"] = bucket["last"][-20:]
-
-
-def hasan_ai_learn_from_followup(rec: Dict[str, Any], outcome: str) -> None:
-    if not HASAN_AI_HAKEM_ENABLED:
-        return
-    snap = rec.get("hasan_ai") if isinstance(rec.get("hasan_ai"), dict) else {}
-    f = snap.get("features") if isinstance(snap.get("features"), dict) else {}
-    keys = snap.get("keys") if isinstance(snap.get("keys"), list) else []
-    if not f or not keys:
-        return
-    ai = hasan_ai_memory()
-    outcome = str(outcome or "NÖTR").upper()
-    if outcome == "NO_HIT":
-        outcome = "NÖTR"
-    if outcome not in ("TP1", "TP2", "TP3", "STOP"):
-        outcome = "NÖTR"
-    potential = str(rec.get("potential_outcome", outcome)).upper()
-    if potential == "NO_HIT":
-        potential = "NÖTR"
-    if potential not in ("TP1", "TP2", "TP3", "STOP", "NÖTR"):
-        potential = outcome
-
-    for key in keys:
-        p = ai["patterns"].setdefault(key, {"total": 0, "TP1": 0, "TP2": 0, "TP3": 0, "STOP": 0, "NÖTR": 0, "last": []})
-        _hasan_ai_update_bucket(p, outcome, f.get("symbol"))
-        if HASAN_AI_PRO_STORE_MAX_POTENTIAL and potential in ("TP2", "TP3") and potential != outcome:
-            pp = ai.setdefault("potential_patterns", {}).setdefault(key, {"total": 0, "TP1": 0, "TP2": 0, "TP3": 0, "STOP": 0, "NÖTR": 0, "last": []})
-            _hasan_ai_update_bucket(pp, potential, f.get("symbol"))
-
-    coin_key = f"{f.get('direction')}:{f.get('base')}"
-    c = ai["coins"].setdefault(coin_key, {"total": 0, "TP1": 0, "TP2": 0, "TP3": 0, "STOP": 0, "NÖTR": 0, "last": []})
-    _hasan_ai_update_bucket(c, outcome, f.get("symbol"))
-    ai.setdefault("recent", []).append({
-        "ts": time.time(), "symbol": f.get("symbol"), "base": f.get("base"), "direction": f.get("direction"),
-        "outcome": outcome, "potential": potential, "ict_bias": f.get("ict_bias"), "close_class": f.get("close_class"),
-        "score15": f.get("score15"), "ict_edge": f.get("ict_edge"), "inv_class": f.get("inv_class"), "whale": f.get("whale_conf"),
-    })
-    ai["recent"] = ai["recent"][-300:]
-    stats["hasan_ai_learn"] = stats.get("hasan_ai_learn", 0) + 1
-
-
-def build_hasan_ai_status_message() -> str:
-    ai = hasan_ai_memory()
-    coins = ai.get("coins", {})
-    patterns = ai.get("patterns", {})
-    recent = ai.get("recent", [])[-10:]
-    total = sum(int(safe_float(v.get("total", 0), 0)) for v in coins.values())
-    stop_total = sum(int(safe_float(v.get("STOP", 0), 0)) for v in coins.values())
-    tp1_total = sum(int(safe_float(v.get("TP1", 0), 0)) for v in coins.values())
-    tp2_total = sum(int(safe_float(v.get("TP2", 0), 0)) for v in coins.values())
-    tp3_total = sum(int(safe_float(v.get("TP3", 0), 0)) for v in coins.values())
-    tp_total = tp1_total + tp2_total + tp3_total
-    rate = (tp_total / total * 100.0) if total else 0.0
-    worst = []
-    best = []
-    for key, rec in patterns.items():
-        t, stop_rate, win_rate = _hasan_ai_stats_summary(rec)
-        if t >= HASAN_AI_PRO_MIN_STRICT_SAMPLES:
-            tp2p = _hasan_ai_tp2plus_rate(rec)
-            item = (key, t, stop_rate, win_rate, tp2p)
-            if stop_rate >= 0.50:
-                worst.append(item)
-            if win_rate >= 0.65:
-                best.append(item)
-    worst = sorted(worst, key=lambda x: (x[2], x[1]), reverse=True)[:3]
-    best = sorted(best, key=lambda x: (x[3], x[4], x[1]), reverse=True)[:3]
-    lines = [
-        "🧠 GERÇEK HAKEM PRO BİRLEŞİK DURUM",
-        f"Saat: {tr_str()}",
-        f"Aktif: {'EVET' if HASAN_AI_HAKEM_ENABLED else 'HAYIR'} | Pro mod: {'EVET' if HASAN_AI_PRO_MODE_ENABLED else 'HAYIR'}",
-        f"Öğrenilen sonuç: {total} | TP1/TP2/TP3: {tp1_total}/{tp2_total}/{tp3_total} | Stop: {stop_total} | Başarı: %{rate:.1f}",
-        f"Pattern hafızası: {len(patterns)} | Coin hafızası: {len(coins)} | Potansiyel hafıza: {len(ai.get('potential_patterns', {}))}",
-        f"Blok/geçiş/öğrenme: {stats.get('hasan_ai_block', 0)} / {stats.get('hasan_ai_pass', 0)} / {stats.get('hasan_ai_learn', 0)}",
-    ]
-    if worst:
-        lines.append("Kötü patternler:")
-        for key, t, sr, wr, tp2p in worst:
-            lines.append(f"- stop %{sr*100:.0f}, win %{wr*100:.0f}, n={t} | {key[:95]}")
-    if best:
-        lines.append("İyi patternler:")
-        for key, t, sr, wr, tp2p in best:
-            lines.append(f"- win %{wr*100:.0f}, TP2+ %{tp2p*100:.0f}, n={t} | {key[:95]}")
-    if recent:
-        lines.append("Son hafıza:")
-        for r in recent[-6:]:
-            pot = r.get("potential")
-            pot_txt = f" / pot={pot}" if pot and pot != r.get("outcome") else ""
-            lines.append(f"- {r.get('symbol')} {r.get('direction')} → {r.get('outcome')}{pot_txt} | {r.get('ict_bias')} | {r.get('close_class')} | edge={r.get('ict_edge')} | whale={r.get('whale')}")
-    return "\n".join(lines)
-
 
 
 
@@ -4074,9 +3816,6 @@ async def cmd_pozisyon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         lines.append(f"- {rec.get('symbol')} {rec.get('direction')} | entry {fmt_num(rec.get('entry',0))} | stop {fmt_num(rec.get('stop',0))} | trailing {fmt_num(rec.get('trailing_stop',0)) if rec.get('trailing_stop') else '-'}")
     await update.message.reply_text("\n".join(lines))
 
-async def cmd_hakem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(build_hasan_ai_status_message())
-
 def enforce_single_short_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
     p = copy.deepcopy(payload)
     if p.get("stage") != "SIGNAL":
@@ -4202,14 +3941,22 @@ def format_whale_eye_block(res: Dict[str, Any]) -> str:
     lines.append(f"├─ Uyumsuzluk Sayısı: {whale.get('divergence_count', 0)}")
 
     # Open Interest
+    if oi.get("enabled"):
+        lines.append(f"├─ OI Kaynak: {oi.get('source', '-')}")
     if oi.get("enabled") and oi.get("divergence_type", "NÖTR") != "NÖTR":
         lines.append(f"├─ OI Delta: {oi.get('divergence_type', '-')}")
         if oi.get("oi_change_pct"):
             lines.append(f"│  └─ OI Değişim: %{oi.get('oi_change_pct', 0):.2f} | Fiyat: %{oi.get('price_change_pct', 0):.2f}")
+    elif not oi.get("enabled"):
+        lines.append(f"├─ OI: VERİ YOK ({str(oi.get('reason', '-'))[:90]})")
 
     # Funding Rate
+    if funding.get("enabled"):
+        lines.append(f"├─ Funding Kaynak: {funding.get('source', '-')}")
     if funding.get("enabled") and funding.get("funding_signal", "NÖTR") != "NÖTR":
         lines.append(f"├─ Funding: {funding.get('funding_signal', '-')} (%{funding.get('funding_rate', 0):.4f})")
+    elif not funding.get("enabled"):
+        lines.append(f"├─ Funding: VERİ YOK ({str(funding.get('reason', '-'))[:90]})")
 
     # CVD
     if cvd.get("enabled") and cvd.get("divergence", "NÖTR") != "NÖTR":
@@ -7018,18 +6765,6 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
                 return
             res["reason"] = f"{res.get('reason', '')} | {gate_reason}"[:1400]
 
-        # V5.2.7.4 GERÇEK HAKEM PRO: bütün sinyaller gönderimden önce yerel hafıza + net AL filtresinden geçer.
-        if res.get("stage") == "SIGNAL" and HASAN_AI_HAKEM_ENABLED:
-            hakem_ok, hakem_reason, hakem_score = hasan_ai_hakem_gate(res)
-            res["hasan_ai_reason"] = hakem_reason
-            res["hasan_ai_score"] = hakem_score
-            if not hakem_ok:
-                stats["hasan_ai_block"] = stats.get("hasan_ai_block", 0) + 1
-                logger.info("Gerçek Hakem sinyali susturdu %s %s: %s", direction, symbol, hakem_reason)
-                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "signal_label": "İÇ TAKİP", "reason": f"{res.get('reason', '')} | {hakem_reason}"})
-                return
-            stats["hasan_ai_pass"] = stats.get("hasan_ai_pass", 0) + 1
-
         if res.get("stage") != "SIGNAL" or str(res.get("signal_label", "")) != expected_label:
             logger.info("%s sinyali susturdu %s: %s", expected_label, symbol, res.get("reason", "-"))
             update_hot_memory(copy.deepcopy(res))
@@ -7123,7 +6858,6 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
                 "entry": res["price"], "stop": res["stop"],
                 "tp1": res["tp1"], "tp2": res["tp2"], "tp3": res["tp3"],
                 "stage": "SIGNAL", "done": False, "sent_ts": time.time(),
-                "hasan_ai": hasan_ai_store_signal_snapshot(res),
                 "position_plan": res.get("position_plan", {}),
                 "pm_sent": {},
             }
@@ -7468,7 +7202,6 @@ async def followup_loop() -> None:
                     rec["hit_time"] = hit_time
                     rec["final_price"] = cur
                     rec["pnl_pct"] = round(pnl_pct, 2)
-                    hasan_ai_learn_from_followup(rec, trade_outcome)
         except Exception as e:
             logger.exception("followup_loop hata: %s", e)
         await asyncio.sleep(max(60, FOLLOWUP_CHECK_INTERVAL_SEC))
@@ -7600,11 +7333,14 @@ async def cmd_whale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"🔢 Uyumsuzluk: {whale.get('divergence_count', 0)}\n\n"
         f"📈 OPEN INTEREST\n"
         f"├─ Durum: {oi.get('divergence_type', '-')}\n"
+        f"├─ Kaynak: {oi.get('source', '-')}\n"
         f"├─ Güncel OI: {oi.get('current_oi', 0):,.0f}\n"
         f"├─ OI Değişim: %{oi.get('oi_change_pct', 0):.2f}\n"
-        f"└─ Fiyat Değişim: %{oi.get('price_change_pct', 0):.2f}\n\n"
+        f"├─ Fiyat Değişim: %{oi.get('price_change_pct', 0):.2f}\n"
+        f"└─ Yorum: {oi.get('reason', '-')}\n\n"
         f"💰 FUNDING RATE\n"
         f"├─ Oran: %{funding.get('funding_rate', 0):.4f}\n"
+        f"├─ Kaynak: {funding.get('source', '-')}\n"
         f"├─ Sinyal: {funding.get('funding_signal', '-')}\n"
         f"└─ Yorum: {funding.get('reason', '-')}\n\n"
         f"🪤 ORDERBOOK SPOOFING\n"
@@ -7717,8 +7453,6 @@ def build_app():
     application.add_handler(CommandHandler("whale", cmd_whale))
     application.add_handler(CommandHandler("trend", cmd_trend))
     application.add_handler(CommandHandler("av", cmd_av))
-    application.add_handler(CommandHandler("hakem", cmd_hakem))
-    application.add_handler(CommandHandler("ai_hakem", cmd_hakem))
     application.add_handler(CommandHandler("backtest", cmd_backtest))
     application.add_handler(CommandHandler("pozisyon", cmd_pozisyon))
     # Profesyonel AI komutları ana bot seviyesinde garanti eklenir.
