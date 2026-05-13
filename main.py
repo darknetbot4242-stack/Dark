@@ -4327,6 +4327,450 @@ def add_professional_ai_handlers_embedded(application: Any) -> None:
     return None
 
 
+
+# =========================================================
+# RAILWAY RUNTIME FIX — EKSİK ARKA PLAN DÖNGÜLERİ
+# =========================================================
+# Bu blok V6.2 profesyonel runtime dosyasında post_init içinde çağrılan
+# hot_scan_loop / deep_scan_loop / heartbeat_loop / followup_loop / save_loop
+# fonksiyonlarının eksik kalması nedeniyle eklendi.
+# Amaç: Railway'deki NameError çökmesini düzeltmek ve ana sinyal motorlarını çalıştırmak.
+
+
+def has_active_trade() -> bool:
+    if not ONE_ACTIVE_TRADE_MODE or ACTIVE_TRADE_BLOCK_SEC <= 0:
+        return False
+    now_ts = time.time()
+    for rec in memory.get("follows", {}).values():
+        if not isinstance(rec, dict) or rec.get("done"):
+            continue
+        sent_ts = safe_float(rec.get("sent_ts", rec.get("created_ts", 0)))
+        if sent_ts and now_ts - sent_ts < ACTIVE_TRADE_BLOCK_SEC:
+            return True
+    return False
+
+
+def global_signal_gap_active() -> bool:
+    last_sig = safe_float(memory.get("last_signal_attempt_ts", 0)) or safe_float(memory.get("last_signal_ts", 0))
+    if not last_sig:
+        return False
+    gap = INTERNAL_SIGNAL_SPACING_SEC if SIGNAL_SPACING_SEC <= 0 else max(float(SIGNAL_SPACING_SEC), INTERNAL_SIGNAL_SPACING_SEC)
+    return time.time() - last_sig < gap
+
+
+def should_block_signal(symbol: str, stage: str, payload: Dict[str, Any]) -> bool:
+    direction = str(payload.get("direction", "SHORT")).upper()
+    if stage == "SIGNAL" and daily_trade_already_sent(symbol, direction):
+        return True
+
+    mem_symbol = f"{direction}:{normalize_symbol(symbol)}"
+    now_ts = time.time()
+
+    sig_rec = get_signal_record(mem_symbol, stage)
+    sig_ts = safe_float(sig_rec.get("ts", 0))
+    if sig_ts and now_ts - sig_ts < ALERT_COOLDOWN_MIN * 60:
+        if better_than_previous(mem_symbol, stage, payload):
+            stats["cooldown_override"] += 1
+            return False
+        return True
+
+    setup_rec = memory.get("signals", {}).get(f"setup:{mem_symbol}", {})
+    setup_ts = safe_float(setup_rec.get("ts", 0))
+    if setup_ts and now_ts - setup_ts < SETUP_COOLDOWN_MIN * 60:
+        if better_than_previous(mem_symbol, stage, payload):
+            stats["cooldown_override"] += 1
+            return False
+        return True
+
+    return False
+
+
+def set_signal_memory(symbol: str, stage: str, payload: Dict[str, Any]) -> None:
+    direction = str(payload.get("direction", "SHORT")).upper()
+    sym = normalize_symbol(symbol)
+    mem_symbol = f"{direction}:{sym}"
+    memory.setdefault("signals", {})[signal_key(mem_symbol, stage)] = {
+        "ts": time.time(),
+        "stage": stage,
+        "direction": direction,
+        "price": payload.get("price"),
+        "score": payload.get("score"),
+    }
+    memory.setdefault("signals", {})[f"setup:{mem_symbol}"] = {
+        "ts": time.time(),
+        "stage": stage,
+        "direction": direction,
+        "price": payload.get("price"),
+        "score": payload.get("score"),
+    }
+    if stage == "SIGNAL":
+        set_daily_trade_sent(sym, payload)
+        memory["last_signal_ts"] = time.time()
+
+
+def signal_rank_score(res: Dict[str, Any]) -> float:
+    whale = res.get("whale_eye") if isinstance(res.get("whale_eye"), dict) else {}
+    ict = res.get("ict") if isinstance(res.get("ict"), dict) else {}
+    direction = str(res.get("direction", "SHORT")).upper()
+    ict_edge = 0.0
+    if ict.get("enabled"):
+        if direction == "LONG":
+            ict_edge = safe_float(ict.get("long_pro_score", 0)) - safe_float(ict.get("short_pro_score", 0))
+        else:
+            ict_edge = safe_float(ict.get("short_pro_score", 0)) - safe_float(ict.get("long_pro_score", 0))
+    return (
+        safe_float(res.get("score", 0))
+        + safe_float(res.get("quality_score", 0)) * 2.0
+        + safe_float(res.get("breakdown_score", 0)) * 1.4
+        + safe_float(res.get("rr", 0)) * 2.0
+        + safe_float(whale.get("total_score", 0)) * 1.3
+        + ict_edge * 1.8
+    )
+
+
+def select_best_signals(signals: List[Dict[str, Any]], limit: int = MAX_SIGNAL_PER_SCAN) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if not signals:
+        return [], []
+    ordered = sorted(signals, key=signal_rank_score, reverse=True)
+    effective_limit = max(1, int(limit))
+    if not ONE_ACTIVE_TRADE_MODE and SIGNAL_SPACING_SEC <= 0:
+        effective_limit = 1
+    return ordered[:effective_limit], ordered[effective_limit:]
+
+
+async def maybe_send_signal(res: Dict[str, Any]) -> None:
+    symbol = normalize_symbol(str(res.get("symbol", "")))
+    if not symbol:
+        return
+    direction = str(res.get("direction", "SHORT")).upper()
+    expected_label = "LONG AL" if direction == "LONG" else "SHORT AL"
+
+    if res.get("stage") != "SIGNAL":
+        if res.get("stage") in ("READY", "HOT"):
+            update_hot_memory(res)
+        return
+
+    # Dışarı riskli/çelişkili etiket gitmesin.
+    res = copy.deepcopy(res)
+    res["symbol"] = symbol
+    if direction == "LONG":
+        res["signal_label"] = "LONG AL"
+        res["data_engine"] = "OKX SWAP + ICT LONG"
+        res["binance_confirm_status"] = "NOT_USED"
+        res["binance_symbol"] = normalize_binance_symbol(symbol)
+        res["binance_price"] = 0
+        res["binance_price_gap_pct"] = 0
+        res["binance_confirm_reason"] = "LONG motoru OKX/ICT/Whale Eye ile çalışır; short Binance teyidi kullanılmadı."
+    else:
+        res["signal_label"] = "SHORT AL"
+        confirm = await confirm_signal_on_binance(res)
+        res["data_engine"] = "OKX SWAP"
+        res["binance_confirm_status"] = confirm.get("status", "YOK")
+        res["binance_confirm_score"] = confirm.get("score", 0)
+        res["binance_symbol"] = confirm.get("binance_symbol", normalize_binance_symbol(symbol))
+        res["binance_price"] = confirm.get("binance_price", 0)
+        res["binance_price_gap_pct"] = confirm.get("price_gap_pct", 0)
+        res["binance_confirm_reason"] = confirm.get("reason", "-")
+
+        status = str(confirm.get("status", "YOK"))
+        if status == "PASS":
+            stats["binance_confirm_pass"] += 1
+        elif status == "SOFT_PASS":
+            stats["binance_confirm_soft"] += 1
+        elif status == "UNAVAILABLE":
+            stats["binance_confirm_unavailable"] += 1
+            if BINANCE_CONFIRM_REQUIRED:
+                update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Binance teyidi yok, takipte."})
+                return
+        elif status in ("FAIL", "HARD_FAIL"):
+            stats["binance_confirm_fail"] += 1
+            if BINANCE_CONFIRM_REQUIRED or status == "HARD_FAIL":
+                stats["signal_downgraded_by_binance"] += 1
+                update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Binance teyidi zayıf: {confirm.get('reason', '-')}"})
+                return
+
+    if daily_trade_already_sent(symbol, direction):
+        stats["daily_short_block"] += 1
+        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı coin bugün zaten {expected_label} aldı."})
+        return
+
+    if get_today_trade_sent_count(direction) >= get_daily_trade_limit(direction):
+        stats["daily_total_block"] += 1
+        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Günlük {direction} üst sınırı doldu."})
+        return
+
+    if has_active_trade():
+        stats["active_trade_block"] += 1
+        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Aktif işlem varken yeni AL basılmadı."})
+        return
+
+    if global_signal_gap_active():
+        stats["global_gap_block"] += 1
+        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı anda çoklu sinyal engeli."})
+        return
+
+    if should_block_signal(symbol, "SIGNAL", res):
+        stats["cooldown_reject"] += 1
+        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Cooldown nedeniyle sessiz takip."})
+        return
+
+    memory["last_signal_attempt_ts"] = time.time()
+    ok = await safe_send_telegram(build_signal_message(res))
+    if ok:
+        stats["signal_sent"] += 1
+        if direction == "LONG":
+            stats["long_signal_sent"] += 1
+        set_signal_memory(symbol, "SIGNAL", res)
+        memory.setdefault("follows", {})[f"{direction}:{symbol}"] = {
+            "created_ts": time.time(),
+            "sent_ts": time.time(),
+            "symbol": symbol,
+            "direction": direction,
+            "entry": res.get("price"),
+            "stop": res.get("stop"),
+            "tp1": res.get("tp1"),
+            "tp2": res.get("tp2"),
+            "tp3": res.get("tp3"),
+            "done": False,
+        }
+        memory.get("hot", {}).pop(symbol, None)
+        memory.get("trend_watch", {}).pop(symbol, None)
+
+
+def get_hot_symbols(limit: int = MAX_HOT_CANDIDATES) -> List[str]:
+    merged: Dict[str, Dict[str, Any]] = {}
+    for sym, rec in memory.get("hot", {}).items():
+        merged[sym] = rec if isinstance(rec, dict) else {}
+    for sym, rec in memory.get("trend_watch", {}).items():
+        if not isinstance(rec, dict):
+            continue
+        old = merged.get(sym, {})
+        if safe_float(rec.get("score", 0)) > safe_float(old.get("score", 0)):
+            merged[sym] = rec
+    items = sorted(merged.items(), key=lambda x: safe_float(x[1].get("score", 0)), reverse=True)
+    return [normalize_symbol(k) for k, _ in items if not is_blocked_coin_symbol(k)][:limit]
+
+
+def pick_general_symbols(batch_size: int = MAX_DEEP_ANALYSIS_PER_CYCLE) -> List[str]:
+    global deep_pointer
+    if not COINS:
+        return []
+    out: List[str] = []
+    n = len(COINS)
+    for _ in range(min(batch_size, n)):
+        out.append(normalize_symbol(COINS[deep_pointer % n]))
+        deep_pointer += 1
+    return out
+
+
+async def analyze_separate_engines(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    short_res = await analyze_symbol(symbol, tickers24)
+    long_res = await analyze_long_symbol(symbol, tickers24) if LONG_ENGINE_ENABLED else None
+    for res in (short_res, long_res):
+        if res:
+            results.append(res)
+    signal_dirs = {str(r.get("direction", "SHORT")).upper() for r in results if r.get("stage") == "SIGNAL"}
+    if "SHORT" in signal_dirs and "LONG" in signal_dirs:
+        stats["long_conflict_block"] += 1
+        fixed: List[Dict[str, Any]] = []
+        for r in results:
+            rr = copy.deepcopy(r)
+            rr["stage"] = "READY"
+            rr["signal_label"] = "İÇ TAKİP"
+            rr["reason"] = f"{rr.get('reason', '')} | LONG/SHORT motorları çakıştı; dış sinyal yok."
+            fixed.append(rr)
+        return fixed
+    return results
+
+
+async def hot_scan_loop() -> None:
+    while True:
+        try:
+            cleanup_memory()
+            tickers24 = await get_24h_tickers()
+            hot_syms = get_hot_symbols(MAX_HOT_CANDIDATES)
+            signal_candidates: List[Dict[str, Any]] = []
+            for sym in hot_syms:
+                engine_results = await analyze_separate_engines(sym, tickers24)
+                if not engine_results:
+                    continue
+                stats["analyzed"] += 1
+                for res in engine_results:
+                    if res.get("stage") == "SIGNAL":
+                        signal_candidates.append(res)
+                    elif res.get("stage") in ("READY", "HOT"):
+                        update_hot_memory(res)
+                    else:
+                        stats["rejected"] += 1
+            chosen, suppressed = select_best_signals(signal_candidates, MAX_SIGNAL_PER_SCAN)
+            for res in suppressed:
+                stats["scan_signal_suppressed"] += 1
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı taramada daha güçlü aday seçildi."})
+            for res in chosen:
+                await maybe_send_signal(res)
+        except Exception as e:
+            logger.exception("hot_scan_loop hata: %s", e)
+        await asyncio.sleep(max(0.5, HOT_SCAN_INTERVAL_SEC))
+
+
+async def deep_scan_loop() -> None:
+    while True:
+        try:
+            cleanup_memory()
+            tickers24 = await get_24h_tickers()
+            batch = pick_general_symbols(MAX_DEEP_ANALYSIS_PER_CYCLE)
+            signal_candidates: List[Dict[str, Any]] = []
+            for sym in batch:
+                engine_results = await analyze_separate_engines(sym, tickers24)
+                if not engine_results:
+                    continue
+                stats["analyzed"] += 1
+                for res in engine_results:
+                    if res.get("stage") == "SIGNAL":
+                        signal_candidates.append(res)
+                    elif res.get("stage") in ("READY", "HOT"):
+                        update_hot_memory(res)
+                    else:
+                        stats["rejected"] += 1
+            chosen, suppressed = select_best_signals(signal_candidates, MAX_SIGNAL_PER_SCAN)
+            for res in suppressed:
+                stats["scan_signal_suppressed"] += 1
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı taramada daha güçlü aday seçildi."})
+            for res in chosen:
+                await maybe_send_signal(res)
+        except Exception as e:
+            logger.exception("deep_scan_loop hata: %s", e)
+        await asyncio.sleep(max(1.0, DEEP_SCAN_INTERVAL_SEC))
+
+
+async def heartbeat_loop() -> None:
+    if not AUTO_HEARTBEAT:
+        return
+    while True:
+        try:
+            await safe_send_telegram(build_heartbeat_message())
+        except Exception as e:
+            logger.exception("heartbeat_loop hata: %s", e)
+        await asyncio.sleep(max(60, HEARTBEAT_INTERVAL_SEC))
+
+
+def _followup_candle_hit(direction: str, kline: List[Any], stop: float, tp1: float, tp2: float, tp3: float) -> Dict[str, Any]:
+    high = safe_float(kline[2])
+    low = safe_float(kline[3])
+    direction = (direction or "SHORT").upper()
+    if direction == "LONG":
+        stop_hit = low <= stop if stop > 0 else False
+        if high >= tp3 > 0:
+            return {"stop_hit": stop_hit, "tp_level": "TP3", "tp_price": tp3}
+        if high >= tp2 > 0:
+            return {"stop_hit": stop_hit, "tp_level": "TP2", "tp_price": tp2}
+        if high >= tp1 > 0:
+            return {"stop_hit": stop_hit, "tp_level": "TP1", "tp_price": tp1}
+        return {"stop_hit": stop_hit, "tp_level": "", "tp_price": 0.0}
+    stop_hit = high >= stop if stop > 0 else False
+    if 0 < tp3 and low <= tp3:
+        return {"stop_hit": stop_hit, "tp_level": "TP3", "tp_price": tp3}
+    if 0 < tp2 and low <= tp2:
+        return {"stop_hit": stop_hit, "tp_level": "TP2", "tp_price": tp2}
+    if 0 < tp1 and low <= tp1:
+        return {"stop_hit": stop_hit, "tp_level": "TP1", "tp_price": tp1}
+    return {"stop_hit": stop_hit, "tp_level": "", "tp_price": 0.0}
+
+
+async def check_followups() -> None:
+    follows = memory.get("follows", {})
+    if not follows:
+        return
+    now_ts = time.time()
+    for key, rec in list(follows.items()):
+        if not isinstance(rec, dict) or rec.get("done"):
+            continue
+        sent_ts = safe_float(rec.get("sent_ts", rec.get("created_ts", 0)))
+        if now_ts - sent_ts < FOLLOWUP_DELAY_SEC:
+            continue
+        sym = normalize_symbol(str(rec.get("symbol", key.split(":")[-1])))
+        direction = str(rec.get("direction", "SHORT")).upper()
+        entry = safe_float(rec.get("entry", 0))
+        stop = safe_float(rec.get("stop", 0))
+        tp1 = safe_float(rec.get("tp1", 0))
+        tp2 = safe_float(rec.get("tp2", 0))
+        tp3 = safe_float(rec.get("tp3", 0))
+        limit = int(clamp((FOLLOWUP_DELAY_SEC / 60.0) + 80, 120, 300))
+        k1 = await get_klines(sym, "1m", limit)
+        scan = [k for k in k1 if (kline_start_ms(k) / 1000.0) + 60 >= sent_ts] if k1 else []
+        if not scan:
+            scan = k1[-min(len(k1), 120):] if k1 else []
+        last_price = safe_float(scan[-1][4]) if scan else entry
+        outcome = "NÖTR"
+        hit_time = "-"
+        hit_price = 0.0
+        detail = "Takip süresinde TP/stop görülmedi."
+        for k in scan:
+            hit = _followup_candle_hit(direction, k, stop, tp1, tp2, tp3)
+            candle_time = tr_str(kline_start_ms(k) / 1000.0) if kline_start_ms(k) else "-"
+            if hit["stop_hit"] and hit["tp_level"]:
+                outcome = "STOP"
+                hit_time = candle_time
+                hit_price = stop
+                detail = f"Aynı 1m mumda hem {hit['tp_level']} hem stop göründü; güvenli değerlendirme STOP."
+                break
+            if hit["stop_hit"]:
+                outcome = "STOP"
+                hit_time = candle_time
+                hit_price = stop
+                detail = "Stop, TP seviyelerinden önce geldi."
+                break
+            if hit["tp_level"]:
+                outcome = hit["tp_level"]
+                hit_time = candle_time
+                hit_price = safe_float(hit["tp_price"])
+                detail = f"{outcome}, stoptan önce geldi."
+                # Kullanıcı TP1'de tamamını kapatmak istese bile raporda ulaşılan en üst TP'yi gösterebilmek için
+                # aynı takip penceresinde daha derin TP var mı taramaya devam edilmez; ilk temas kuralı korunur.
+                break
+        pnl = pct_change(entry, last_price) if direction == "LONG" else pct_change(entry, last_price) * -1
+        stars = {"TP1": "⭐", "TP2": "⭐⭐", "TP3": "⭐⭐⭐"}.get(outcome, "")
+        text = (
+            f"⏱ 2 SAAT TP/STOP TAKİP\n"
+            f"⏰ Rapor: {tr_str()} | İlk temas: {hit_time}\n"
+            f"🎯 {sym} | {direction}\n"
+            f"💰 Giriş: {fmt_num(entry)} | Güncel: {fmt_num(last_price)}\n"
+            f"📍 Sonuç fiyatı: {fmt_num(hit_price) if hit_price else '-'}\n"
+            f"📊 Güncel PnL: %{pnl:.2f}\n"
+            f"🛑 Stop: {fmt_num(stop)}\n"
+            f"🎯 TP1: {fmt_num(tp1)} | TP2: {fmt_num(tp2)} | TP3: {fmt_num(tp3)}\n"
+            f"🧭 Mum tarama: {len(scan)} adet 1m mum incelendi.\n"
+            f"Sonuç: {outcome} {stars}\n"
+            f"Not: {detail}"
+        )
+        ok = await safe_send_telegram(text)
+        if ok:
+            stats["followup_sent"] += 1
+            rec["done"] = True
+            rec["outcome"] = outcome
+            rec["hit_time"] = hit_time
+            rec["hit_price"] = hit_price
+
+
+async def followup_loop() -> None:
+    while True:
+        try:
+            await check_followups()
+        except Exception as e:
+            logger.exception("followup_loop hata: %s", e)
+        await asyncio.sleep(max(60, FOLLOWUP_CHECK_INTERVAL_SEC))
+
+
+async def save_loop() -> None:
+    while True:
+        try:
+            save_memory()
+        except Exception as e:
+            logger.exception("save_loop hata: %s", e)
+        await asyncio.sleep(max(20, MEMORY_SAVE_INTERVAL_SEC))
+
+
 async def ai_auto_signal_loop() -> None:
     logger.info("AI otomatik sinyal döngüsü kaldırıldı; ana Whale Eye/ICT döngüleri çalışıyor.")
     return None
