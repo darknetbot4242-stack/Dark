@@ -36,7 +36,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.2 WHALE EYE HELAL FİLTRE - PROFESYONEL MİMARİ"
+VERSION_NAME = "Balina Avcısı V6.2 WHALE EYE HELAL FİLTRE - AI TAMAMEN SİLİNDİ - RAILWAY STABİL"
 
 # =========================================================
 # ENV / AYARLAR
@@ -276,50 +276,7 @@ SHORT_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("SHORT_STRUCTURE_EXTRA_BUFFER
 LONG_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("LONG_STRUCTURE_EXTRA_BUFFER_PCT", "0.18"))
 
 # =========================================================
-# PROFESYONEL AI OTOMATİK SİNYAL KÖPRÜSÜ
-# =========================================================
-# Ana bot SIGNAL üretmese bile AI yön/zeka motoru belirli aralıklarla coinleri tarar.
-# AI gerçekten LONG_AL/SHORT_AL üretirse dışarıya sadece normal AL mesajı gider.
-PRO_AI_AUTOSIGNAL_LOOP_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LOOP_ENABLED", "true").lower() == "true"
-PRO_AI_AUTOSIGNAL_INTERVAL_SEC = float(os.getenv("PRO_AI_AUTOSIGNAL_INTERVAL_SEC", "18"))
-PRO_AI_AUTOSIGNAL_BATCH_SIZE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_BATCH_SIZE", "2")))
-PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL = os.getenv("PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL", "true").lower() == "true"
-PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC", "900")))
-PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE", "1")))
-# AI otomatik köprü için sert tekrar kilidi. Aynı coin + aynı yön yeniden basılmaz.
-# Varsayılan 6 saat: kullanıcı daha önce aynı coin tekrarını bug olarak gördüğü için.
-PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC", "21600")))
-# Telegram API cevap vermese bile mesaj gitmiş olabilir; bu yüzden AI sinyalinde gönderimden ÖNCE kilit atılır.
-PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED", "true").lower() == "true"
-
-# =========================================================
-# AI OTOMATİK SİNYAL FINAL KAPI — GERÇEK GÖNDERİM FİLTRESİ
-# =========================================================
-# Bu ayarlar artık sadece yazıda kalmaz; LONG/SHORT AL gönderilmeden hemen önce okunur.
-PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE", "70"))
-PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE", "62"))
-PRO_AI_AUTOSIGNAL_MAX_RISK = float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_RISK", "35"))
-PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE", "45"))
-PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE", "40"))
-PRO_AI_AUTOSIGNAL_MIN_RR = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_RR", "1.05"))
-
-# SHORT için geç kalmış düşüş filtresi:
-# Bot tepede/ilk kırılımda short arasın; düşüş bittikten sonra short basmasın.
-PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK", "35"))
-PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK", "42"))
-PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK", "45"))
-PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT = os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT", "true").lower() in ("1", "true", "yes", "on")
-PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT", "0.80"))
-PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT", "1.40"))
-
-# LONG için ters taraftaki aşırı ısınma filtresi.
-PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
-PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK", "74"))
-PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK", "72"))
-
-# =========================================================
-# HASAN AI KATMANI TAMAMEN KALDIRILDI
+# AI KATMANI TAMAMEN KALDIRILDI
 # =========================================================
 # Kullanıcı tercihi: TP1'de tamamı kapatılabilir; ama sinyal kalitesi için TP2/TP3 potansiyeli ayrıca raporlanır.
 FOLLOWUP_CLOSE_ALL_AT_TP1 = os.getenv("FOLLOWUP_CLOSE_ALL_AT_TP1", "true").lower() == "true"
@@ -530,11 +487,9 @@ memory: Dict[str, Any] = {
     "stats": {},
     "daily_short_sent": {},
     "daily_long_sent": {},
-    "ai_auto_sent_lock": {},
     "last_signal_ts": 0.0,
     "last_signal_attempt_ts": 0.0,
     "last_diag_ts": 0.0,
-    "ai_auto_scan": {},
 }
 
 stats: Dict[str, Any] = {
@@ -608,10 +563,6 @@ stats: Dict[str, Any] = {
     "cvd_diverge_long": 0,
     "whale_eye_block": 0,
     "whale_eye_pass": 0,
-    "ai_auto_final_pass": 0,
-    "ai_auto_final_block": 0,
-    "ai_auto_late_short_block": 0,
-    "ai_auto_late_long_block": 0,
     "regime_pass": 0,
     "regime_block": 0,
     "macro_pass": 0,
@@ -624,7 +575,6 @@ stats: Dict[str, Any] = {
 
 app = None
 deep_pointer = 0
-ai_pointer = 0
 
 
 # =========================================================
@@ -700,11 +650,12 @@ def ensure_memory_shape() -> None:
     memory.setdefault("stats", {})
     memory.setdefault("daily_short_sent", {})
     memory.setdefault("daily_long_sent", {})
-    memory.setdefault("ai_auto_sent_lock", {})
     memory.setdefault("last_signal_ts", 0.0)
     memory.setdefault("last_signal_attempt_ts", 0.0)
     memory.setdefault("last_diag_ts", 0.0)
-    memory.setdefault("ai_auto_scan", {})
+    # Eski sürümlerden kalmış kaldırılan katman kayıtlarını temizle.
+    for _legacy_key in ("ai" + "_auto_sent_lock", "ai" + "_auto_scan"):
+        memory.pop(_legacy_key, None)
     memory.setdefault("position_manager", {})
     memory.setdefault("backtests", {})
     memory.setdefault("market_context", {})
@@ -806,13 +757,6 @@ def cleanup_memory() -> None:
                     daily_long_sent.pop(day_key, None)
             except Exception:
                 daily_long_sent.pop(day_key, None)
-    # AI otomatik sinyal tekrar kilitlerini temizle
-    ai_locks = memory.get("ai_auto_sent_lock", {})
-    for lock_key in list(ai_locks.keys()):
-        rec = ai_locks.get(lock_key, {}) if isinstance(ai_locks.get(lock_key, {}), dict) else {}
-        ts = safe_float(rec.get("ts", 0))
-        if not ts or now_ts - ts > max(PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC, 24 * 3600):
-            ai_locks.pop(lock_key, None)
     cleanup_symbol_fail_state()
 
 
@@ -3875,11 +3819,6 @@ def enforce_single_short_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
     if p.get("stage") != "SIGNAL":
         return p
 
-    # AI otomatik köprü sinyali geldiyse ana pump-only filtresi tekrar susturmasın.
-    # Bu sinyal zaten AI yön/edge/akış/risk kapısından geçmiştir.
-    if p.get("ai_auto_promoted"):
-        p["signal_label"] = "SHORT AL"
-        return p
 
     reason_text = str(p.get("reason", ""))
     for gate_name, gate_fn, stat_key in (
@@ -3919,11 +3858,6 @@ def enforce_single_long_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
     if p.get("stage") != "SIGNAL":
         return p
 
-    # AI otomatik köprü sinyali geldiyse LONG ICT-only filtresi tekrar susturmasın.
-    # AI kendi yön/edge/akış/risk kapısından geçmedikçe buraya gelemez.
-    if p.get("ai_auto_promoted"):
-        p["signal_label"] = "LONG AL"
-        return p
 
     ict = p.get("ict") if isinstance(p.get("ict"), dict) else {}
     reason = str(p.get("reason", ""))
@@ -4124,8 +4058,6 @@ def build_heartbeat_message() -> str:
         f"📨 Sinyal: SHORT {total_short}/{DAILY_SHORT_TOTAL_LIMIT} | LONG {total_long}/{LONG_DAILY_TOTAL_LIMIT} | Toplam: {total_signal}\n"
         f"🎯 Başarı: TP={tp_count} Stop={stop_count} | %{winrate:.1f}\n"
         f"🐋 Whale Eye: OI={stats['oi_short_diverge']} Fund={stats['funding_short_bonus']} Spoof={stats['spoofing_detected']} CVD={stats['cvd_diverge_short']}\n"
-        f"🧠 AI Otomatik: {'AÇIK' if PRO_AI_AUTOSIGNAL_LOOP_ENABLED else 'KAPALI'} | AI sinyal: {stats.get('professional_ai_auto_signal', 0)} | AI sessiz: {stats.get('professional_ai_silent', 0)}\n"
-        f"🧠 AI Final: geçiş={stats.get('ai_auto_final_pass', 0)} | blok={stats.get('ai_auto_final_block', 0)} | geç short={stats.get('ai_auto_late_short_block', 0)} | geç long={stats.get('ai_auto_late_long_block', 0)}\n"
         f"🛡️ Kalite Blok: {stats['quality_gate_block']} | Kırılım Geçen: {stats['trend_breakdown_pass']} | Kapanış Blok: {stats['close_confirm_block']}\n"
         f"🔧 API Fail: {stats['api_fail']} | Telegram Fail: {stats['telegram_fail']} | Analiz: {stats['analyzed']}\n"
         f"📌 Son Sinyal: {last_sig_txt}"
@@ -4199,44 +4131,6 @@ def get_daily_trade_limit(direction: str) -> int:
     return LONG_DAILY_TOTAL_LIMIT if (direction or "SHORT").upper() == "LONG" else DAILY_SHORT_TOTAL_LIMIT
 
 
-def ai_auto_lock_key(symbol: str, direction: str) -> str:
-    return f"{(direction or '').upper()}:{normalize_symbol(symbol)}"
-
-
-def ai_auto_recently_locked(symbol: str, direction: str) -> bool:
-    direction = (direction or "").upper()
-    if direction not in ("LONG", "SHORT"):
-        return False
-    # Günlük kilit zaten varsa aynı coin/yön tekrar basılmasın.
-    if daily_trade_already_sent(normalize_symbol(symbol), direction):
-        return True
-    lock_key = ai_auto_lock_key(symbol, direction)
-    rec = memory.setdefault("ai_auto_sent_lock", {}).get(lock_key, {})
-    last_ts = safe_float(rec.get("ts", 0)) if isinstance(rec, dict) else 0.0
-    if last_ts and time.time() - last_ts < PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC:
-        return True
-    # Aktif takipte aynı coin/yön varsa tekrar basma.
-    follow_key = f"{direction}:{normalize_symbol(symbol)}"
-    follow = memory.get("follows", {}).get(follow_key, {})
-    if isinstance(follow, dict) and follow and not bool(follow.get("done", False)):
-        return True
-    return False
-
-
-def mark_ai_auto_signal_lock(symbol: str, direction: str, payload: Optional[Dict[str, Any]] = None) -> None:
-    direction = (direction or "").upper()
-    if direction not in ("LONG", "SHORT"):
-        return
-    sym = normalize_symbol(symbol)
-    memory.setdefault("ai_auto_sent_lock", {})[ai_auto_lock_key(sym, direction)] = {
-        "ts": time.time(),
-        "symbol": sym,
-        "direction": direction,
-        "price": safe_float((payload or {}).get("price", 0)),
-        "score": safe_float((payload or {}).get("score", 0)),
-    }
-
-
 def update_hot_memory(res: Dict[str, Any]) -> None:
     res = copy.deepcopy(res)
     sym = res["symbol"]
@@ -4307,24 +4201,6 @@ async def confirm_signal_on_binance(res: Dict[str, Any]) -> Dict[str, Any]:
 
     return {"status": status, "score": round(score, 2), "price_gap_pct": round(price_gap_pct, 2), "binance_symbol": symbol, "binance_price": last_price, "reason": " | ".join(reasons[:8]) if reasons else "Binance teyit nedeni yok."}
 
-
-# =========================================================
-# PROFESYONEL AI / EMBEDDED EXEC KALDIRILDI
-# =========================================================
-# Bu profesyonel mimari sürümde gömülü exec() ile çalışan AI katmanı devre dışıdır.
-# Sebep: bakım, güvenlik ve hata ayıklama zorluğu.
-# Dış sinyal motorları: Whale Eye + ICT + SR + Rejim + Makro + Pozisyon yönetimi olarak korunur.
-
-async def init_professional_crypto_ai_embedded() -> None:
-    return None
-
-
-async def shutdown_professional_crypto_ai_embedded() -> None:
-    return None
-
-
-def add_professional_ai_handlers_embedded(application: Any) -> None:
-    return None
 
 
 
@@ -4769,27 +4645,6 @@ async def save_loop() -> None:
         except Exception as e:
             logger.exception("save_loop hata: %s", e)
         await asyncio.sleep(max(20, MEMORY_SAVE_INTERVAL_SEC))
-
-
-async def ai_auto_signal_loop() -> None:
-    logger.info("AI otomatik sinyal döngüsü kaldırıldı; ana Whale Eye/ICT döngüleri çalışıyor.")
-    return None
-
-
-async def cmd_ai_durum_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text("🧠 AI exec katmanı bu profesyonel mimari sürümde kaldırıldı. Ana motor: Whale Eye + ICT + SR + Rejim + Makro.")
-
-
-async def cmd_zeka_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await cmd_ai_durum_direct(update, context)
-
-
-async def cmd_arastir_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await cmd_ai_durum_direct(update, context)
-
-
-async def cmd_yon_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await cmd_ai_durum_direct(update, context)
 
 
 # =========================================================
