@@ -24,7 +24,6 @@ import logging
 import hashlib
 import hmac
 from typing import Any, Dict, List, Optional, Tuple
-from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
@@ -322,6 +321,16 @@ PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT = float(os.getenv("PRO_AI_AUTOSIGNAL_S
 PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK", "74"))
 PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK", "72"))
+
+# ONE STOP FIX / SHORT SON GÜVENLİK KAPISI
+# SHORT için ters CVD + Binance FAIL + zayıf pump + düşük RSI kombinasyonunu dış sinyalden keser.
+SHORT_CONTEXT_GUARD_ENABLED = os.getenv("SHORT_CONTEXT_GUARD_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+SHORT_BLOCK_ON_BULLISH_CVD_AND_BINANCE_FAIL = os.getenv("SHORT_BLOCK_ON_BULLISH_CVD_AND_BINANCE_FAIL", "true").lower() in ("1", "true", "yes", "on")
+SHORT_CONTEXT_WEAK_PUMP_20M = float(os.getenv("SHORT_CONTEXT_WEAK_PUMP_20M", "0.60"))
+SHORT_CONTEXT_WEAK_PUMP_1H = float(os.getenv("SHORT_CONTEXT_WEAK_PUMP_1H", "0.80"))
+SHORT_CONTEXT_LATE_RSI1 = float(os.getenv("SHORT_CONTEXT_LATE_RSI1", "42"))
+SHORT_CONTEXT_BLOCK_BINANCE_FAIL_WEAK_PUMP_LOW_RSI = os.getenv("SHORT_CONTEXT_BLOCK_BINANCE_FAIL_WEAK_PUMP_LOW_RSI", "true").lower() in ("1", "true", "yes", "on")
+SHORT_CONTEXT_BLOCK_BULLISH_CVD_WEAK_PUMP_LOW_RSI = os.getenv("SHORT_CONTEXT_BLOCK_BULLISH_CVD_WEAK_PUMP_LOW_RSI", "true").lower() in ("1", "true", "yes", "on")
 
 # =========================================================
 # V6.1 PRO EKLERİ — WS / SR / HAFIZA / REJİM / BACKTEST
@@ -623,6 +632,7 @@ stats: Dict[str, Any] = {
     "backtest_cost_applied": 0,
     "position_management_updates": 0,
     "natural_language_hit": 0,
+    "short_context_guard_block": 0,
 }
 
 app = None
@@ -1329,14 +1339,31 @@ async def build_full_whale_eye_analysis(
     )
 
     divergence_types = []
-    if oi.get("divergence_type", "NÖTR") not in ("NÖTR", "BEKLIYOR", "KAPALI", "VERI_YOK"):
-        divergence_types.append(oi.get("divergence_type"))
-    if funding.get("funding_signal", "NÖTR") not in ("NÖTR", "KAPALI", "VERI_YOK"):
-        divergence_types.append(funding.get("funding_signal"))
+    direction_u = (direction or "SHORT").upper()
+
+    oi_div = oi.get("divergence_type", "NÖTR")
+    if oi_div not in ("NÖTR", "BEKLIYOR", "KAPALI", "VERI_YOK"):
+        # OI fonksiyonu direction'a göre puanı zaten tersliyor; pozitif skor varsa güvene dahil et.
+        if safe_float(oi.get("score", 0)) > 0:
+            divergence_types.append(oi_div)
+
+    funding_sig = funding.get("funding_signal", "NÖTR")
+    if funding_sig not in ("NÖTR", "KAPALI", "VERI_YOK"):
+        if safe_float(funding.get("score", 0)) > 0:
+            divergence_types.append(funding_sig)
+
     if spoofing.get("spoofing_detected"):
-        divergence_types.append(spoofing.get("spoof_type", "SPOOF"))
-    if cvd.get("divergence", "NÖTR") not in ("NÖTR", "KAPALI", "VERI_YOK"):
-        divergence_types.append(cvd.get("divergence"))
+        # Karışık/ters spoofing izi güveni şişirmesin; sadece yön lehine pozitif skor varsa güvene dahil et.
+        if safe_float(spoofing.get("score", 0)) > 0:
+            divergence_types.append(spoofing.get("spoof_type", "SPOOF"))
+
+    cvd_div = cvd.get("divergence", "NÖTR")
+    if cvd_div not in ("NÖTR", "KAPALI", "VERI_YOK"):
+        # SHORT için sadece BEARISH_DIVERGENCE, LONG için sadece BULLISH_DIVERGENCE güveni artırır.
+        if direction_u == "SHORT" and cvd_div == "BEARISH_DIVERGENCE":
+            divergence_types.append(cvd_div)
+        elif direction_u == "LONG" and cvd_div == "BULLISH_DIVERGENCE":
+            divergence_types.append(cvd_div)
 
     whale_confidence = "DÜŞÜK"
     if len(divergence_types) >= 3:
@@ -5973,6 +6000,13 @@ def validate_ai_auto_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
     if blocks:
         return False, "AI OTOMATİK FİNAL KAPI BLOK: " + " | ".join(blocks)
 
+    # AI otomatik sinyal için Binance teyidi henüz bilinmeden yapılabilecek ONE tipi erken blok:
+    # Pump zayıf + RSI1 düşükse ve veri içinde ters CVD görünüyorsa dış sinyal yok.
+    if direction == "SHORT":
+        pre_guard = short_context_guard_reason(payload, str(payload.get("binance_confirm_status", "")))
+        if pre_guard:
+            return False, "AI OTOMATİK SHORT CONTEXT BLOK: " + pre_guard
+
     if direction == "SHORT" and PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED:
         # Düşüş bittikten sonra short istemiyoruz.
         if n["rsi1"] <= PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK:
@@ -6437,6 +6471,55 @@ async def apply_professional_final_gates(res: Dict[str, Any]) -> Dict[str, Any]:
     return p
 
 
+def short_context_guard_reason(res: Dict[str, Any], binance_status: str = "") -> str:
+    """
+    ONE-USDT tarzı stop hatası koruması.
+    SHORT dış sinyali şu ters kombinasyonlarda sessiz takibe düşürür:
+      - CVD BULLISH_DIVERGENCE + Binance FAIL
+      - CVD BULLISH_DIVERGENCE + zayıf pump + düşük RSI1
+      - Binance FAIL + zayıf pump + düşük RSI1
+    Amaç ZRX tarzı BEARISH_CVD + Binance PASS + şişkin RSI sinyallerini öldürmemek.
+    """
+    if not SHORT_CONTEXT_GUARD_ENABLED:
+        return ""
+    if str(res.get("direction", "SHORT")).upper() != "SHORT":
+        return ""
+
+    whale = res.get("whale_eye") if isinstance(res.get("whale_eye"), dict) else {}
+    cvd = whale.get("cvd") if isinstance(whale.get("cvd"), dict) else {}
+    cvd_div = str(cvd.get("divergence", "")).upper()
+
+    status = str(binance_status or res.get("binance_confirm_status", "")).upper()
+    pump20 = safe_float(res.get("pump_20m", 0), 0)
+    pump1h = safe_float(res.get("pump_1h", 0), 0)
+    rsi1 = safe_float(res.get("rsi1", 50), 50)
+
+    cvd_bullish = cvd_div == "BULLISH_DIVERGENCE"
+    binance_fail = status in ("FAIL", "HARD_FAIL")
+    weak_pump = pump20 < SHORT_CONTEXT_WEAK_PUMP_20M and pump1h < SHORT_CONTEXT_WEAK_PUMP_1H
+    low_rsi = rsi1 <= SHORT_CONTEXT_LATE_RSI1
+
+    if SHORT_BLOCK_ON_BULLISH_CVD_AND_BINANCE_FAIL and cvd_bullish and binance_fail:
+        return (
+            "ONE STOP KORUMA: SHORT için ters CVD var "
+            f"({cvd_div}) ve Binance teyit {status}; dış sinyal yok."
+        )
+
+    if SHORT_CONTEXT_BLOCK_BULLISH_CVD_WEAK_PUMP_LOW_RSI and cvd_bullish and weak_pump and low_rsi:
+        return (
+            "ONE STOP KORUMA: CVD bullish + pump zayıf "
+            f"(20m={pump20:.2f}, 1s={pump1h:.2f}) + RSI1 düşük {rsi1:.1f}; geç/ters SHORT dışarı basılmaz."
+        )
+
+    if SHORT_CONTEXT_BLOCK_BINANCE_FAIL_WEAK_PUMP_LOW_RSI and binance_fail and weak_pump and low_rsi:
+        return (
+            "ONE STOP KORUMA: Binance FAIL + pump zayıf "
+            f"(20m={pump20:.2f}, 1s={pump1h:.2f}) + RSI1 düşük {rsi1:.1f}; sadece iç takip."
+        )
+
+    return ""
+
+
 async def maybe_send_signal(res: Dict[str, Any]) -> None:
     symbol = res["symbol"]
     stage = res["stage"]
@@ -6555,6 +6638,19 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
                     return
             elif confirm_status == "UNAVAILABLE":
                 stats["binance_confirm_unavailable"] += 1
+
+            # ONE-USDT stop hatası güvenlik kapısı:
+            # Ters CVD + Binance FAIL + zayıf pump/düşük RSI SHORT sinyalini dışarı göndermeden iç takibe alır.
+            context_guard = short_context_guard_reason(res, confirm_status)
+            if context_guard:
+                stats["short_context_guard_block"] = stats.get("short_context_guard_block", 0) + 1
+                logger.info("SHORT CONTEXT GUARD BLOK %s: %s", symbol, context_guard)
+                guarded = copy.deepcopy(res)
+                guarded["stage"] = "READY"
+                guarded["signal_label"] = "İÇ TAKİP"
+                guarded["reason"] = f"{guarded.get('reason', '')} | {context_guard}"[:1400]
+                update_hot_memory(guarded)
+                return
         else:
             res["data_engine"] = "OKX SWAP + ICT LONG"
             res["binance_confirm_status"] = "NOT_USED"
