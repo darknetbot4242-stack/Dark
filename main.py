@@ -24,7 +24,6 @@ import logging
 import hashlib
 import hmac
 from typing import Any, Dict, List, Optional, Tuple
-from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
@@ -41,7 +40,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE PRO WS + SR + HATA HAFIZASI + HELAL FİLTRE"
+VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE PRO WS + SR + HATA HAFIZASI + HELAL FİLTRE - 100 COIN + 15M MA GUARD V2"
 
 # =========================================================
 # ENV / AYARLAR
@@ -83,8 +82,8 @@ FOLLOWUP_DELAY_SEC = int(float(os.getenv("FOLLOWUP_DELAY_SEC", "7200")))
 HOT_TTL_SEC = int(float(os.getenv("HOT_TTL_SEC", "1800")))
 ALERT_COOLDOWN_MIN = int(float(os.getenv("ALERT_COOLDOWN_MIN", "180")))
 SETUP_COOLDOWN_MIN = int(float(os.getenv("SETUP_COOLDOWN_MIN", "120")))
-MAX_HOT_CANDIDATES = int(float(os.getenv("MAX_HOT_CANDIDATES", "16")))
-MAX_DEEP_ANALYSIS_PER_CYCLE = int(float(os.getenv("MAX_DEEP_ANALYSIS_PER_CYCLE", "25")))
+MAX_HOT_CANDIDATES = int(float(os.getenv("MAX_HOT_CANDIDATES", "28")))
+MAX_DEEP_ANALYSIS_PER_CYCLE = int(float(os.getenv("MAX_DEEP_ANALYSIS_PER_CYCLE", "35")))
 
 MIN_CANDIDATE_SCORE = float(os.getenv("MIN_CANDIDATE_SCORE", "27"))
 MIN_READY_SCORE = float(os.getenv("MIN_READY_SCORE", "44"))
@@ -333,6 +332,12 @@ SHORT_CONTEXT_LATE_RSI1 = float(os.getenv("SHORT_CONTEXT_LATE_RSI1", "42"))
 SHORT_CONTEXT_BLOCK_BINANCE_FAIL_WEAK_PUMP_LOW_RSI = os.getenv("SHORT_CONTEXT_BLOCK_BINANCE_FAIL_WEAK_PUMP_LOW_RSI", "true").lower() in ("1", "true", "yes", "on")
 SHORT_CONTEXT_BLOCK_BULLISH_CVD_WEAK_PUMP_LOW_RSI = os.getenv("SHORT_CONTEXT_BLOCK_BULLISH_CVD_WEAK_PUMP_LOW_RSI", "true").lower() in ("1", "true", "yes", "on")
 
+# 15M MA GATE — Kullanıcının istediği net kural:
+# 15m sarı MA7, pembe MA25 altına inmeden SHORT AL dışarı basılmaz.
+SHORT_15M_MA_GATE_ENABLED = os.getenv("SHORT_15M_MA_GATE_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+SHORT_15M_FAST_MA = int(float(os.getenv("SHORT_15M_FAST_MA", "7")))
+SHORT_15M_SLOW_MA = int(float(os.getenv("SHORT_15M_SLOW_MA", "25")))
+
 # =========================================================
 # V6.1 PRO EKLERİ — WS / SR / HAFIZA / REJİM / BACKTEST
 # =========================================================
@@ -343,7 +348,7 @@ PRO_WS_ENABLED = os.getenv("PRO_WS_ENABLED", "true").lower() in ("1", "true", "y
 PRO_WS_URL = os.getenv("PRO_WS_URL", "wss://ws.okx.com:8443/ws/v5/public").strip()
 PRO_WS_BOOK_CHANNEL = os.getenv("PRO_WS_BOOK_CHANNEL", "books5").strip()
 PRO_WS_TRADE_CHANNEL = os.getenv("PRO_WS_TRADE_CHANNEL", "trades").strip()
-PRO_WS_SYMBOL_LIMIT = int(float(os.getenv("PRO_WS_SYMBOL_LIMIT", "40")))
+PRO_WS_SYMBOL_LIMIT = int(float(os.getenv("PRO_WS_SYMBOL_LIMIT", "100")))
 PRO_WS_STALE_SEC = float(os.getenv("PRO_WS_STALE_SEC", "8.0"))
 PRO_WS_RECONNECT_SEC = float(os.getenv("PRO_WS_RECONNECT_SEC", "3.0"))
 PRO_WS_TRADE_HISTORY = int(float(os.getenv("PRO_WS_TRADE_HISTORY", "240")))
@@ -414,22 +419,31 @@ SYMBOL_FAIL_FORGET_SEC = int(float(os.getenv("SYMBOL_FAIL_FORGET_SEC", "43200"))
 SYMBOL_FAIL_MAX_STREAK = int(float(os.getenv("SYMBOL_FAIL_MAX_STREAK", "2")))
 
 DEFAULT_COINS = [
-    "XRP-USDT-SWAP", "ADA-USDT-SWAP", "TRX-USDT-SWAP", "XLM-USDT-SWAP",
-    "HBAR-USDT-SWAP", "ALGO-USDT-SWAP", "VET-USDT-SWAP", "IOTA-USDT-SWAP",
-    "CHZ-USDT-SWAP", "GALA-USDT-SWAP", "ZIL-USDT-SWAP", "ZRX-USDT-SWAP",
-    "DYDX-USDT-SWAP", "SEI-USDT-SWAP", "ARB-USDT-SWAP", "OP-USDT-SWAP",
-    "SAND-USDT-SWAP", "MANA-USDT-SWAP", "FLOW-USDT-SWAP", "ROSE-USDT-SWAP",
-    "CFX-USDT-SWAP", "SKL-USDT-SWAP", "ANKR-USDT-SWAP", "CELR-USDT-SWAP",
-    "IOST-USDT-SWAP", "ONE-USDT-SWAP", "SXP-USDT-SWAP", "CTSI-USDT-SWAP",
-    "RSR-USDT-SWAP", "BLUR-USDT-SWAP", "ACH-USDT-SWAP", "API3-USDT-SWAP",
-    "GMT-USDT-SWAP", "LRC-USDT-SWAP", "KAVA-USDT-SWAP", "MINA-USDT-SWAP",
-    "WOO-USDT-SWAP", "BAND-USDT-SWAP", "STORJ-USDT-SWAP", "MASK-USDT-SWAP",
-    "ID-USDT-SWAP", "ARPA-USDT-SWAP", "ONT-USDT-SWAP", "QTUM-USDT-SWAP",
-    "BAT-USDT-SWAP", "ENJ-USDT-SWAP", "RVN-USDT-SWAP", "KNC-USDT-SWAP",
-    "COMP-USDT-SWAP", "CRV-USDT-SWAP", "LDO-USDT-SWAP", "PENDLE-USDT-SWAP",
-    "ENA-USDT-SWAP", "PYTH-USDT-SWAP", "JUP-USDT-SWAP", "STRK-USDT-SWAP",
-    "ARKM-USDT-SWAP", "OM-USDT-SWAP", "POLYX-USDT-SWAP", "HOT-USDT-SWAP",
-    "DUSK-USDT-SWAP", "HOOK-USDT-SWAP", "PHB-USDT-SWAP", "MAGIC-USDT-SWAP",
+    "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP",
+    "BNB-USDT-SWAP", "ADA-USDT-SWAP", "AVAX-USDT-SWAP", "LINK-USDT-SWAP",
+    "DOT-USDT-SWAP", "TRX-USDT-SWAP", "LTC-USDT-SWAP", "BCH-USDT-SWAP",
+    "UNI-USDT-SWAP", "NEAR-USDT-SWAP", "APT-USDT-SWAP", "ARB-USDT-SWAP",
+    "OP-USDT-SWAP", "FIL-USDT-SWAP", "INJ-USDT-SWAP", "TAO-USDT-SWAP",
+    "RENDER-USDT-SWAP", "WLD-USDT-SWAP", "TIA-USDT-SWAP", "SEI-USDT-SWAP",
+    "PYTH-USDT-SWAP", "ENA-USDT-SWAP", "STX-USDT-SWAP", "STRK-USDT-SWAP",
+    "ARKM-USDT-SWAP", "FLOW-USDT-SWAP", "CFX-USDT-SWAP", "MASK-USDT-SWAP",
+    "RAY-USDT-SWAP", "AR-USDT-SWAP", "DYDX-USDT-SWAP", "ZRX-USDT-SWAP",
+    "IOTA-USDT-SWAP", "ALGO-USDT-SWAP", "HBAR-USDT-SWAP", "XLM-USDT-SWAP",
+    "VET-USDT-SWAP", "CHZ-USDT-SWAP", "GALA-USDT-SWAP", "ZIL-USDT-SWAP",
+    "SAND-USDT-SWAP", "MANA-USDT-SWAP", "ROSE-USDT-SWAP", "SKL-USDT-SWAP",
+    "ANKR-USDT-SWAP", "CELR-USDT-SWAP", "IOST-USDT-SWAP", "ONE-USDT-SWAP",
+    "SXP-USDT-SWAP", "CTSI-USDT-SWAP", "RSR-USDT-SWAP", "BLUR-USDT-SWAP",
+    "ACH-USDT-SWAP", "API3-USDT-SWAP", "GMT-USDT-SWAP", "LRC-USDT-SWAP",
+    "KAVA-USDT-SWAP", "MINA-USDT-SWAP", "WOO-USDT-SWAP", "BAND-USDT-SWAP",
+    "STORJ-USDT-SWAP", "ID-USDT-SWAP", "ARPA-USDT-SWAP", "ONT-USDT-SWAP",
+    "QTUM-USDT-SWAP", "BAT-USDT-SWAP", "ENJ-USDT-SWAP", "RVN-USDT-SWAP",
+    "KNC-USDT-SWAP", "CRV-USDT-SWAP", "JUP-USDT-SWAP", "OM-USDT-SWAP",
+    "POLYX-USDT-SWAP", "DUSK-USDT-SWAP", "HOOK-USDT-SWAP", "PHB-USDT-SWAP",
+    "MAGIC-USDT-SWAP", "AEVO-USDT-SWAP", "ALT-USDT-SWAP", "ZK-USDT-SWAP",
+    "ZRO-USDT-SWAP", "JTO-USDT-SWAP", "JOE-USDT-SWAP", "RDNT-USDT-SWAP",
+    "SUSHI-USDT-SWAP", "SNX-USDT-SWAP", "1INCH-USDT-SWAP", "GMX-USDT-SWAP",
+    "LPT-USDT-SWAP", "EGLD-USDT-SWAP", "AXS-USDT-SWAP", "THETA-USDT-SWAP",
+    "APE-USDT-SWAP", "IMX-USDT-SWAP", "SSV-USDT-SWAP", "ATOM-USDT-SWAP",
 ]
 def coin_base_from_symbol(symbol: str) -> str:
     s = (symbol or "").strip().upper().replace("/", "-")
@@ -634,6 +648,7 @@ stats: Dict[str, Any] = {
     "position_management_updates": 0,
     "natural_language_hit": 0,
     "short_context_guard_block": 0,
+    "short_15m_ma_gate_block": 0,
 }
 
 app = None
@@ -2903,6 +2918,7 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
     h1 = highs(k1); l1 = lows(k1); v1 = volumes(k1); v5 = volumes(k5)
 
     ema9_1 = ema(c1, 9); ema21_1 = ema(c1, 21); ema50_5 = ema(c5, 50)
+    ema_fast_15 = ema(c15, SHORT_15M_FAST_MA); ema_slow_15 = ema(c15, SHORT_15M_SLOW_MA)
     rsi1 = rsi(c1, 14); rsi5 = rsi(c5, 14); rsi15 = rsi(c15, 14)
     atr1 = atr(k1, 14); atr5 = atr(k5, 14)
 
@@ -2910,6 +2926,8 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
     last_rsi1 = rsi1[-1]; prev_rsi1 = rsi1[-2]
     last_rsi5 = rsi5[-1]; last_rsi15 = rsi15[-1]
     last_ema9_1 = ema9_1[-1]; last_ema21_1 = ema21_1[-1]; last_ema50_5 = ema50_5[-1]
+    last_ma_fast_15 = ema_fast_15[-1] if ema_fast_15 else 0.0
+    last_ma_slow_15 = ema_slow_15[-1] if ema_slow_15 else 0.0
     last_atr1 = max(atr1[-1], last_price * 0.0014)
     last_atr5 = max(atr5[-1], last_price * 0.0019)
 
@@ -3108,6 +3126,9 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
         "rsi1": round(last_rsi1, 2),
         "rsi5": round(last_rsi5, 2),
         "rsi15": round(last_rsi15, 2),
+        "ma_fast_15m": round(last_ma_fast_15, 8),
+        "ma_slow_15m": round(last_ma_slow_15, 8),
+        "ma15_gate_pass": bool(last_ma_fast_15 > 0 and last_ma_slow_15 > 0 and last_ma_fast_15 < last_ma_slow_15),
         "vol_ratio_1m": round(vol_ratio_1m, 2),
         "vol_ratio_5m": round(vol_ratio_5m, 2),
         "quote_volume": quote_vol,
@@ -3573,6 +3594,7 @@ def build_heartbeat_message() -> str:
         f"🧠 AI Final: geçiş={stats.get('ai_auto_final_pass', 0)} | blok={stats.get('ai_auto_final_block', 0)} | geç short={stats.get('ai_auto_late_short_block', 0)} | geç long={stats.get('ai_auto_late_long_block', 0)}\n"
         f"🛡️ Kalite Blok: {stats['quality_gate_block']} | Kırılım Geçen: {stats['trend_breakdown_pass']} | Kapanış Blok: {stats['close_confirm_block']}\n"
         f"🧱 SR/Rejim/Makro blok: {stats.get('sr_block', 0)} / {stats.get('regime_block', 0)} / {stats.get('macro_block', 0)}\n"
+        f"📉 15m MA SHORT blok: {stats.get('short_15m_ma_gate_block', 0)}\n"
         f"🧠 Hata Hafızası: öğrenme={stats.get('mistake_memory_learn', 0)} | blok={stats.get('mistake_memory_block', 0)}\n"
         f"🧪 Backtest: {stats.get('backtest_runs', 0)} | maliyetli={stats.get('backtest_cost_applied', 0)}\n"
         f"🔧 API Fail: {stats['api_fail']} | Telegram Fail: {stats['telegram_fail']} | Analiz: {stats['analyzed']}\n"
@@ -6472,6 +6494,44 @@ async def apply_professional_final_gates(res: Dict[str, Any]) -> Dict[str, Any]:
     return p
 
 
+async def short_15m_ma_gate_reason(symbol: str, res: Dict[str, Any]) -> str:
+    """
+    15m sarı MA7, pembe MA25 altına inmeden SHORT dış sinyali basılmaz.
+    Bu kapı normal SHORT ve AI otomatik köprüden gelen SHORT sinyallerini de kontrol eder.
+    """
+    if not SHORT_15M_MA_GATE_ENABLED:
+        return ""
+    if str(res.get("direction", "SHORT")).upper() != "SHORT":
+        return ""
+
+    ma_fast = safe_float(res.get("ma_fast_15m", 0), 0)
+    ma_slow = safe_float(res.get("ma_slow_15m", 0), 0)
+
+    # Payload içinde yoksa canlı 15m mumdan oku. Böylece AI otomatik payload da bypass edemez.
+    if ma_fast <= 0 or ma_slow <= 0:
+        try:
+            k15 = await get_klines(symbol, "15m", max(60, SHORT_15M_SLOW_MA + 10))
+            if len(k15) < SHORT_15M_SLOW_MA + 3:
+                return "15m MA kapısı: veri yetersiz, dış SHORT yok."
+            c15 = closes(k15)
+            e_fast = ema(c15, SHORT_15M_FAST_MA)
+            e_slow = ema(c15, SHORT_15M_SLOW_MA)
+            ma_fast = safe_float(e_fast[-1], 0)
+            ma_slow = safe_float(e_slow[-1], 0)
+            res["ma_fast_15m"] = round(ma_fast, 8)
+            res["ma_slow_15m"] = round(ma_slow, 8)
+        except Exception as e:
+            return f"15m MA kapısı okunamadı: {str(e)[:80]}"
+
+    if ma_fast >= ma_slow:
+        return (
+            f"15m MA kapısı BLOK: sarı MA{SHORT_15M_FAST_MA} "
+            f"({fmt_num(ma_fast)}) pembe MA{SHORT_15M_SLOW_MA} "
+            f"({fmt_num(ma_slow)}) altına inmedi; SHORT sadece iç takip."
+        )
+    return ""
+
+
 def short_context_guard_reason(res: Dict[str, Any], binance_status: str = "") -> str:
     """
     ONE-USDT tarzı stop hatası koruması.
@@ -6567,6 +6627,15 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
             logger.info("%s sinyali susturdu %s: %s", expected_label, symbol, res.get("reason", "-"))
             update_hot_memory(copy.deepcopy(res))
             return
+
+        # Son güvenlik: AI otomatik dahil hiçbir SHORT, 15m MA7 < MA25 olmadan dışarı çıkamaz.
+        if direction == "SHORT":
+            ma_gate = await short_15m_ma_gate_reason(symbol, res)
+            if ma_gate:
+                stats["short_15m_ma_gate_block"] = stats.get("short_15m_ma_gate_block", 0) + 1
+                logger.info("15M MA SHORT BLOK %s: %s", symbol, ma_gate)
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | {ma_gate}"[:1400]})
+                return
 
         logger.info("%s ÜRETİLDİ %s skor=%s", expected_label, symbol, res.get("score"))
 
