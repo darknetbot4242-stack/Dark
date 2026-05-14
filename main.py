@@ -18,7 +18,7 @@ import signal
 import copy
 import os
 import json
-import time
+import timeurlencode
 import asyncio
 import logging
 import hashlib
@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from urllib.parse import urlencode
+from urllib.parse import 
 
 import requests
 
@@ -6580,6 +6580,54 @@ def short_context_guard_reason(res: Dict[str, Any], binance_status: str = "") ->
         )
 
     return ""
+
+
+
+def _ma15_guard_common(res: Dict[str, Any], direction: str) -> str:
+    direction = (direction or "").upper()
+    if direction == "SHORT":
+        enabled = SHORT_15M_MA_GUARD_ENABLED
+        fast_n = SHORT_15M_MA_FAST
+        slow_n = SHORT_15M_MA_SLOW
+        relation = "altına"
+    else:
+        enabled = LONG_15M_MA_GUARD_ENABLED
+        fast_n = LONG_15M_MA_FAST
+        slow_n = LONG_15M_MA_SLOW
+        relation = "üstüne"
+
+    if not enabled:
+        return ""
+    if str(res.get("direction", "SHORT")).upper() != direction:
+        return ""
+
+    try:
+        symbol = normalize_symbol(str(res.get("symbol", "")))
+        k15 = get_klines_cached_sync(symbol, "15m", max(80, slow_n + 20))
+        if not k15 or len(k15) < max(fast_n, slow_n) + 3:
+            return f"15m MA {direction} kapısı: veri yetersiz; dış sinyal yok."
+        closes = [safe_float(k[4]) for k in k15 if len(k) > 4]
+        fast_vals = ema(closes, fast_n)
+        slow_vals = ema(closes, slow_n)
+        ma_fast = safe_float(fast_vals[-1], 0)
+        ma_slow = safe_float(slow_vals[-1], 0)
+
+        if direction == "SHORT" and ma_fast >= ma_slow:
+            return f"15m MA SHORT kapısı: MA{fast_n}={ma_fast:.8f} MA{slow_n}={ma_slow:.8f}; sarı çizgi pembe çizginin altına inmedi."
+        if direction == "LONG" and ma_fast <= ma_slow:
+            return f"15m MA LONG kapısı: MA{fast_n}={ma_fast:.8f} MA{slow_n}={ma_slow:.8f}; sarı çizgi pembe çizginin üstüne çıkmadı."
+        return ""
+    except Exception as e:
+        logger.warning("15m MA %s guard hata: %s", direction, e)
+        return f"15m MA {direction} kapısı hata/veri yok; dış sinyal yok."
+
+
+def short_15m_ma_guard_reason(res: Dict[str, Any]) -> str:
+    return _ma15_guard_common(res, "SHORT")
+
+
+def long_15m_ma_guard_reason(res: Dict[str, Any]) -> str:
+    return _ma15_guard_common(res, "LONG")
 
 
 async def maybe_send_signal(res: Dict[str, Any]) -> None:
