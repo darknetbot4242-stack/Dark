@@ -21,7 +21,6 @@ import json
 import time
 import asyncio
 import logging
-from logging.handlers import RotatingFileHandler
 import hashlib
 import hmac
 from typing import Any, Dict, List, Optional, Tuple
@@ -30,13 +29,18 @@ from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
 
 import requests
+
+try:
+    import websockets
+except Exception:
+    websockets = None
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.2 WHALE EYE HELAL FİLTRE - AI TAMAMEN SİLİNDİ - RAILWAY STABİL"
+VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE PRO WS + SR + HATA HAFIZASI + HELAL FİLTRE"
 
 # =========================================================
 # ENV / AYARLAR
@@ -276,69 +280,106 @@ SHORT_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("SHORT_STRUCTURE_EXTRA_BUFFER
 LONG_STRUCTURE_EXTRA_BUFFER_PCT = float(os.getenv("LONG_STRUCTURE_EXTRA_BUFFER_PCT", "0.18"))
 
 # =========================================================
-# AI KATMANI TAMAMEN KALDIRILDI
+# PROFESYONEL AI OTOMATİK SİNYAL KÖPRÜSÜ
 # =========================================================
-# Kullanıcı tercihi: TP1'de tamamı kapatılabilir; ama sinyal kalitesi için TP2/TP3 potansiyeli ayrıca raporlanır.
-FOLLOWUP_CLOSE_ALL_AT_TP1 = os.getenv("FOLLOWUP_CLOSE_ALL_AT_TP1", "true").lower() == "true"
-# Net AL kuralı: riskli/çelişkili mesaj dışarı çıkmasın.
-STRICT_CLEAN_SIGNAL_ONLY = os.getenv("STRICT_CLEAN_SIGNAL_ONLY", "true").lower() == "true"
-STRICT_BLOCK_RISKY_CLOSE_FOR_SIGNAL = os.getenv("STRICT_BLOCK_RISKY_CLOSE_FOR_SIGNAL", "true").lower() == "true"
-STRICT_BLOCK_NEGATIVE_15M_SCORE = os.getenv("STRICT_BLOCK_NEGATIVE_15M_SCORE", "true").lower() == "true"
-STRICT_MIN_SHORT_ICT_EDGE = float(os.getenv("STRICT_MIN_SHORT_ICT_EDGE", "1.50"))
-STRICT_MIN_LONG_ICT_EDGE = float(os.getenv("STRICT_MIN_LONG_ICT_EDGE", "1.50"))
-
+# Ana bot SIGNAL üretmese bile AI yön/zeka motoru belirli aralıklarla coinleri tarar.
+# AI gerçekten LONG_AL/SHORT_AL üretirse dışarıya sadece normal AL mesajı gider.
+PRO_AI_AUTOSIGNAL_LOOP_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LOOP_ENABLED", "true").lower() == "true"
+PRO_AI_AUTOSIGNAL_INTERVAL_SEC = float(os.getenv("PRO_AI_AUTOSIGNAL_INTERVAL_SEC", "18"))
+PRO_AI_AUTOSIGNAL_BATCH_SIZE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_BATCH_SIZE", "2")))
+PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL = os.getenv("PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL", "true").lower() == "true"
+PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC", "900")))
+PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE = int(float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE", "1")))
+# AI otomatik köprü için sert tekrar kilidi. Aynı coin + aynı yön yeniden basılmaz.
+# Varsayılan 6 saat: kullanıcı daha önce aynı coin tekrarını bug olarak gördüğü için.
+PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC = int(float(os.getenv("PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC", "21600")))
+# Telegram API cevap vermese bile mesaj gitmiş olabilir; bu yüzden AI sinyalinde gönderimden ÖNCE kilit atılır.
+PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED", "true").lower() == "true"
 
 # =========================================================
-# PRO PLUS OPSİYONEL MODÜLLER
-# Rejim + makro korelasyon + destek/direnç + pozisyon yönetimi + backtest
+# AI OTOMATİK SİNYAL FINAL KAPI — GERÇEK GÖNDERİM FİLTRESİ
 # =========================================================
-MARKET_REGIME_ENGINE_ENABLED = os.getenv("MARKET_REGIME_ENGINE_ENABLED", "true").lower() == "true"
-REGIME_BLOCK_COUNTER_TREND = os.getenv("REGIME_BLOCK_COUNTER_TREND", "true").lower() == "true"
-REGIME_TREND_EMA_GAP_PCT = float(os.getenv("REGIME_TREND_EMA_GAP_PCT", "0.35"))
-REGIME_BREAKOUT_ATR_MULT = float(os.getenv("REGIME_BREAKOUT_ATR_MULT", "1.35"))
-REGIME_RANGE_MAX_WIDTH_PCT = float(os.getenv("REGIME_RANGE_MAX_WIDTH_PCT", "1.35"))
-REGIME_MIN_CONFIRM_SCORE = float(os.getenv("REGIME_MIN_CONFIRM_SCORE", "2.0"))
+# Bu ayarlar artık sadece yazıda kalmaz; LONG/SHORT AL gönderilmeden hemen önce okunur.
+PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE", "70"))
+PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE", "62"))
+PRO_AI_AUTOSIGNAL_MAX_RISK = float(os.getenv("PRO_AI_AUTOSIGNAL_MAX_RISK", "35"))
+PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE", "45"))
+PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE", "40"))
+PRO_AI_AUTOSIGNAL_MIN_RR = float(os.getenv("PRO_AI_AUTOSIGNAL_MIN_RR", "1.05"))
 
-MACRO_CORRELATION_ENGINE_ENABLED = os.getenv("MACRO_CORRELATION_ENGINE_ENABLED", "true").lower() == "true"
-MACRO_SYMBOLS = [x.strip().upper() for x in os.getenv("MACRO_SYMBOLS", "BTC-USDT-SWAP,ETH-USDT-SWAP").split(",") if x.strip()]
-MACRO_BTC_DROP_BLOCK_LONG_PCT = float(os.getenv("MACRO_BTC_DROP_BLOCK_LONG_PCT", "0.45"))
-MACRO_BTC_PUMP_BLOCK_SHORT_PCT = float(os.getenv("MACRO_BTC_PUMP_BLOCK_SHORT_PCT", "0.55"))
-MACRO_BTC_FAST_MOVE_5M_PCT = float(os.getenv("MACRO_BTC_FAST_MOVE_5M_PCT", "0.28"))
-MACRO_HIGH_CORR_MIN = float(os.getenv("MACRO_HIGH_CORR_MIN", "0.55"))
-MACRO_BLOCK_IF_HIGH_CORR_COUNTER = os.getenv("MACRO_BLOCK_IF_HIGH_CORR_COUNTER", "true").lower() == "true"
+# SHORT için geç kalmış düşüş filtresi:
+# Bot tepede/ilk kırılımda short arasın; düşüş bittikten sonra short basmasın.
+PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK", "35"))
+PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK", "42"))
+PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK", "45"))
+PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT = os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT", "0.80"))
+PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT = float(os.getenv("PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT", "1.40"))
 
-SR_ENGINE_ENABLED = os.getenv("SR_ENGINE_ENABLED", "true").lower() == "true"
-SR_PIVOT_LEFT = int(float(os.getenv("SR_PIVOT_LEFT", "2")))
-SR_PIVOT_RIGHT = int(float(os.getenv("SR_PIVOT_RIGHT", "2")))
-SR_LOOKBACK_1M = int(float(os.getenv("SR_LOOKBACK_1M", "90")))
-SR_LOOKBACK_5M = int(float(os.getenv("SR_LOOKBACK_5M", "72")))
-SR_CLUSTER_PCT = float(os.getenv("SR_CLUSTER_PCT", "0.18"))
-SR_NEAR_LEVEL_PCT = float(os.getenv("SR_NEAR_LEVEL_PCT", "0.45"))
-SR_TP1_ROOM_BUFFER_PCT = float(os.getenv("SR_TP1_ROOM_BUFFER_PCT", "0.18"))
-SR_STOP_BEHIND_LEVEL_PCT = float(os.getenv("SR_STOP_BEHIND_LEVEL_PCT", "0.08"))
-SR_MIN_LEVEL_SCORE = float(os.getenv("SR_MIN_LEVEL_SCORE", "2.0"))
-SR_BLOCK_IF_TP1_WALL = os.getenv("SR_BLOCK_IF_TP1_WALL", "true").lower() == "true"
-SR_BLOCK_WEAK_ZONE_LOW_FLOW = os.getenv("SR_BLOCK_WEAK_ZONE_LOW_FLOW", "true").lower() == "true"
+# LONG için ters taraftaki aşırı ısınma filtresi.
+PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED = os.getenv("PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK", "74"))
+PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK = float(os.getenv("PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK", "72"))
 
-POSITION_MANAGER_ENABLED = os.getenv("POSITION_MANAGER_ENABLED", "true").lower() == "true"
-POSITION_MANAGER_CHECK_INTERVAL_SEC = int(float(os.getenv("POSITION_MANAGER_CHECK_INTERVAL_SEC", "90")))
-POSITION_PM_MIN_AGE_SEC = int(float(os.getenv("POSITION_PM_MIN_AGE_SEC", "90")))
-POSITION_TP1_PARTIAL_PCT = float(os.getenv("POSITION_TP1_PARTIAL_PCT", "50"))
-POSITION_TP2_PARTIAL_PCT = float(os.getenv("POSITION_TP2_PARTIAL_PCT", "30"))
-POSITION_MOVE_STOP_BE_AFTER_TP1 = os.getenv("POSITION_MOVE_STOP_BE_AFTER_TP1", "true").lower() == "true"
-POSITION_TRAILING_ENABLED = os.getenv("POSITION_TRAILING_ENABLED", "true").lower() == "true"
-POSITION_TRAIL_ATR_MULT = float(os.getenv("POSITION_TRAIL_ATR_MULT", "1.20"))
-POSITION_TRAIL_AFTER_PROFIT_PCT = float(os.getenv("POSITION_TRAIL_AFTER_PROFIT_PCT", "0.55"))
-POSITION_SEND_PM_ALERTS = os.getenv("POSITION_SEND_PM_ALERTS", "true").lower() == "true"
+# =========================================================
+# V6.1 PRO EKLERİ — WS / SR / HAFIZA / REJİM / BACKTEST
+# =========================================================
+# DeepSeek/harici AI eklemez. Mevcut V6 AI otomatik köprü korunur; yeni katmanlar onu daha profesyonel denetler.
 
-BACKTEST_ENGINE_ENABLED = os.getenv("BACKTEST_ENGINE_ENABLED", "true").lower() == "true"
+# --- WebSocket canlı orderbook + trade akışı ---
+PRO_WS_ENABLED = os.getenv("PRO_WS_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_WS_URL = os.getenv("PRO_WS_URL", "wss://ws.okx.com:8443/ws/v5/public").strip()
+PRO_WS_BOOK_CHANNEL = os.getenv("PRO_WS_BOOK_CHANNEL", "books5").strip()
+PRO_WS_TRADE_CHANNEL = os.getenv("PRO_WS_TRADE_CHANNEL", "trades").strip()
+PRO_WS_SYMBOL_LIMIT = int(float(os.getenv("PRO_WS_SYMBOL_LIMIT", "40")))
+PRO_WS_STALE_SEC = float(os.getenv("PRO_WS_STALE_SEC", "8.0"))
+PRO_WS_RECONNECT_SEC = float(os.getenv("PRO_WS_RECONNECT_SEC", "3.0"))
+PRO_WS_TRADE_HISTORY = int(float(os.getenv("PRO_WS_TRADE_HISTORY", "240")))
+PRO_WS_BOOK_HISTORY = int(float(os.getenv("PRO_WS_BOOK_HISTORY", "80")))
+PRO_WS_SPOOF_MIN_DROP_RATIO = float(os.getenv("PRO_WS_SPOOF_MIN_DROP_RATIO", "0.42"))
+PRO_WS_SPOOF_MIN_GROWTH_RATIO = float(os.getenv("PRO_WS_SPOOF_MIN_GROWTH_RATIO", "2.60"))
+PRO_WS_SPOOF_WINDOW_SEC = float(os.getenv("PRO_WS_SPOOF_WINDOW_SEC", "4.0"))
+
+# --- Profesyonel final kapılar ---
+PRO_FINAL_GATES_ENABLED = os.getenv("PRO_FINAL_GATES_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+SR_FILTER_ENABLED = os.getenv("SR_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+SR_HARD_BLOCK_ENABLED = os.getenv("SR_HARD_BLOCK_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+SR_CLUSTER_TOLERANCE_PCT = float(os.getenv("SR_CLUSTER_TOLERANCE_PCT", "0.18"))
+SR_MIN_TOUCHES = int(float(os.getenv("SR_MIN_TOUCHES", "2")))
+SR_TP1_WALL_BUFFER_PCT = float(os.getenv("SR_TP1_WALL_BUFFER_PCT", "0.18"))
+REGIME_FILTER_ENABLED = os.getenv("REGIME_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+MACRO_FILTER_ENABLED = os.getenv("MACRO_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+MACRO_BTC_STRONG_MOVE_PCT = float(os.getenv("MACRO_BTC_STRONG_MOVE_PCT", "0.55"))
+MACRO_ETH_STRONG_MOVE_PCT = float(os.getenv("MACRO_ETH_STRONG_MOVE_PCT", "0.70"))
+PRO_GATE_BLOCK_ONLY_WEAK_WHALE = os.getenv("PRO_GATE_BLOCK_ONLY_WEAK_WHALE", "true").lower() in ("1", "true", "yes", "on")
+PRO_GATE_WHALE_OVERRIDE_SCORE = float(os.getenv("PRO_GATE_WHALE_OVERRIDE_SCORE", "6.0"))
+
+# --- Hata hafızası ---
+MISTAKE_MEMORY_ENABLED = os.getenv("MISTAKE_MEMORY_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+MISTAKE_MEMORY_MIN_STOPS = int(float(os.getenv("MISTAKE_MEMORY_MIN_STOPS", "1")))
+MISTAKE_MEMORY_BLOCK_HOURS = float(os.getenv("MISTAKE_MEMORY_BLOCK_HOURS", "18"))
+MISTAKE_MEMORY_KEEP_DAYS = int(float(os.getenv("MISTAKE_MEMORY_KEEP_DAYS", "14")))
+MISTAKE_MEMORY_SOFT_BLOCK_SCORE_ADD = float(os.getenv("MISTAKE_MEMORY_SOFT_BLOCK_SCORE_ADD", "14"))
+
+# --- Helal filtre: mevcut meme/çöp bloklarına ek olarak faiz/yield ağırlıklı protokoller isteğe bağlı engellenir ---
+HELAL_FILTER_ENABLED = os.getenv("HELAL_FILTER_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+HELAL_EXTRA_BLOCKED_COINS = tuple(
+    x.strip().upper()
+    for x in os.getenv("HELAL_EXTRA_BLOCKED_COINS", "AAVE,COMP,LDO,PENDLE").split(",")
+    if x.strip()
+)
+
+# --- Backtest / maliyet modeli ---
 BACKTEST_DEFAULT_BARS = int(float(os.getenv("BACKTEST_DEFAULT_BARS", "240")))
-BACKTEST_FORWARD_BARS = int(float(os.getenv("BACKTEST_FORWARD_BARS", "45")))
-BACKTEST_MIN_SIGNAL_GAP_BARS = int(float(os.getenv("BACKTEST_MIN_SIGNAL_GAP_BARS", "12")))
-BACKTEST_RISK_STOP_PCT = float(os.getenv("BACKTEST_RISK_STOP_PCT", "0.80"))
-BACKTEST_TP1_PCT = float(os.getenv("BACKTEST_TP1_PCT", "1.00"))
-BACKTEST_TP2_PCT = float(os.getenv("BACKTEST_TP2_PCT", "1.50"))
-BACKTEST_TP3_PCT = float(os.getenv("BACKTEST_TP3_PCT", "2.00"))
+BACKTEST_FEE_PCT = float(os.getenv("BACKTEST_FEE_PCT", "0.08"))          # giriş+çıkış toplam taker tahmini
+BACKTEST_SLIPPAGE_PCT = float(os.getenv("BACKTEST_SLIPPAGE_PCT", "0.04"))
+BACKTEST_FUNDING_PCT_PER_8H = float(os.getenv("BACKTEST_FUNDING_PCT_PER_8H", "0.01"))
+
+# --- Pozisyon yönetimi / takip raporu ---
+POSITION_MANAGEMENT_ENABLED = os.getenv("POSITION_MANAGEMENT_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+TRAILING_AFTER_TP1_ENABLED = os.getenv("TRAILING_AFTER_TP1_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+TRAILING_LOCK_PCT_AFTER_TP1 = float(os.getenv("TRAILING_LOCK_PCT_AFTER_TP1", "0.20"))
 
 
 BLOCKED_COIN_BASE_KEYWORDS = tuple(
@@ -347,18 +388,6 @@ BLOCKED_COIN_BASE_KEYWORDS = tuple(
         "BLOCKED_COIN_BASE_KEYWORDS",
         "PEPE,1000PEPE,DOGE,SHIB,FLOKI,BONK,WIF,MEME,TURBO,MEW,BRETT,NOT,"
         "BOME,TRUMP,FARTCOIN,PNUT,GOAT,MELANIA,AI16Z,VINE,GRIFFAIN,PIPPIN"
-    ).split(",")
-    if x.strip()
-)
-
-# Kullanıcı kararı / helal hassasiyet filtresi:
-# Bu coinler kaldıraç-türev, faiz/yield, NFT/metaverse/gaming gibi şüpheli alanlara yakın görüldüğü için
-# sadece DEFAULT_COINS listesinden çıkarılmaz; COINS env içine yanlışlıkla yazılsa bile zorunlu bloklanır.
-ETHICAL_BLOCKED_COIN_BASE_KEYWORDS = tuple(
-    x.strip().upper()
-    for x in os.getenv(
-        "ETHICAL_BLOCKED_COIN_BASE_KEYWORDS",
-        "DYDX,JUP,COMP,PENDLE,LDO,CRV,BLUR,GALA,SAND,MANA"
     ).split(",")
     if x.strip()
 )
@@ -376,15 +405,18 @@ SYMBOL_FAIL_MAX_STREAK = int(float(os.getenv("SYMBOL_FAIL_MAX_STREAK", "2")))
 DEFAULT_COINS = [
     "XRP-USDT-SWAP", "ADA-USDT-SWAP", "TRX-USDT-SWAP", "XLM-USDT-SWAP",
     "HBAR-USDT-SWAP", "ALGO-USDT-SWAP", "VET-USDT-SWAP", "IOTA-USDT-SWAP",
-    "CHZ-USDT-SWAP", "ZIL-USDT-SWAP", "ZRX-USDT-SWAP", "SEI-USDT-SWAP", "ARB-USDT-SWAP", "OP-USDT-SWAP", "FLOW-USDT-SWAP", "ROSE-USDT-SWAP",
+    "CHZ-USDT-SWAP", "GALA-USDT-SWAP", "ZIL-USDT-SWAP", "ZRX-USDT-SWAP",
+    "DYDX-USDT-SWAP", "SEI-USDT-SWAP", "ARB-USDT-SWAP", "OP-USDT-SWAP",
+    "SAND-USDT-SWAP", "MANA-USDT-SWAP", "FLOW-USDT-SWAP", "ROSE-USDT-SWAP",
     "CFX-USDT-SWAP", "SKL-USDT-SWAP", "ANKR-USDT-SWAP", "CELR-USDT-SWAP",
     "IOST-USDT-SWAP", "ONE-USDT-SWAP", "SXP-USDT-SWAP", "CTSI-USDT-SWAP",
-    "RSR-USDT-SWAP", "ACH-USDT-SWAP", "API3-USDT-SWAP",
+    "RSR-USDT-SWAP", "BLUR-USDT-SWAP", "ACH-USDT-SWAP", "API3-USDT-SWAP",
     "GMT-USDT-SWAP", "LRC-USDT-SWAP", "KAVA-USDT-SWAP", "MINA-USDT-SWAP",
     "WOO-USDT-SWAP", "BAND-USDT-SWAP", "STORJ-USDT-SWAP", "MASK-USDT-SWAP",
     "ID-USDT-SWAP", "ARPA-USDT-SWAP", "ONT-USDT-SWAP", "QTUM-USDT-SWAP",
     "BAT-USDT-SWAP", "ENJ-USDT-SWAP", "RVN-USDT-SWAP", "KNC-USDT-SWAP",
-    "ENA-USDT-SWAP", "PYTH-USDT-SWAP", "STRK-USDT-SWAP",
+    "COMP-USDT-SWAP", "CRV-USDT-SWAP", "LDO-USDT-SWAP", "PENDLE-USDT-SWAP",
+    "ENA-USDT-SWAP", "PYTH-USDT-SWAP", "JUP-USDT-SWAP", "STRK-USDT-SWAP",
     "ARKM-USDT-SWAP", "OM-USDT-SWAP", "POLYX-USDT-SWAP", "HOT-USDT-SWAP",
     "DUSK-USDT-SWAP", "HOOK-USDT-SWAP", "PHB-USDT-SWAP", "MAGIC-USDT-SWAP",
 ]
@@ -401,8 +433,11 @@ def coin_base_from_symbol(symbol: str) -> str:
 
 def is_blocked_coin_symbol(symbol: str) -> bool:
     base = coin_base_from_symbol(symbol)
-    all_blocked = tuple(BLOCKED_COIN_BASE_KEYWORDS) + tuple(ETHICAL_BLOCKED_COIN_BASE_KEYWORDS)
-    return any(key and key in base for key in all_blocked)
+    if any(key and key in base for key in BLOCKED_COIN_BASE_KEYWORDS):
+        return True
+    if HELAL_FILTER_ENABLED and any(key and key in base for key in HELAL_EXTRA_BLOCKED_COINS):
+        return True
+    return False
 
 
 def filter_coin_universe(symbols: List[str]) -> List[str]:
@@ -424,21 +459,13 @@ COINS = filter_coin_universe([x.strip().upper() for x in os.getenv("COINS", ",".
 # =========================================================
 # LOGGING
 # =========================================================
-LOG_MAX_BYTES = int(float(os.getenv("LOG_MAX_BYTES", "5242880")))
-LOG_BACKUP_COUNT = int(float(os.getenv("LOG_BACKUP_COUNT", "5")))
-
-file_log_handler = RotatingFileHandler(
-    LOG_FILE,
-    maxBytes=LOG_MAX_BYTES,
-    backupCount=LOG_BACKUP_COUNT,
-    encoding="utf-8",
-)
-stream_log_handler = logging.StreamHandler()
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[file_log_handler, stream_log_handler],
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
 )
 logger = logging.getLogger("balina_avcisi_v6")
 
@@ -475,9 +502,22 @@ symbol_fail_state: Dict[str, Dict[str, Any]] = {}
 
 # V6 YENI: OI / Funding / CVD cache'leri
 oi_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
-funding_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+funding_cache: Dict[str, Tuple[float, float]] = {}
 cvd_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 spoofing_memory: Dict[str, Dict[str, Any]] = {}
+
+# V6.1 PRO WS canlı veri hafızası
+ws_orderbooks: Dict[str, Dict[str, Any]] = {}
+ws_book_history: Dict[str, deque] = {}
+ws_trades: Dict[str, deque] = {}
+ws_runtime_state: Dict[str, Any] = {
+    "enabled": PRO_WS_ENABLED,
+    "connected": False,
+    "last_msg_ts": 0.0,
+    "last_error": "-",
+    "reconnects": 0,
+    "subscriptions": 0,
+}
 
 memory: Dict[str, Any] = {
     "hot": {},
@@ -487,9 +527,12 @@ memory: Dict[str, Any] = {
     "stats": {},
     "daily_short_sent": {},
     "daily_long_sent": {},
+    "ai_auto_sent_lock": {},
     "last_signal_ts": 0.0,
     "last_signal_attempt_ts": 0.0,
     "last_diag_ts": 0.0,
+    "ai_auto_scan": {},
+    "mistake_memory": {},
 }
 
 stats: Dict[str, Any] = {
@@ -563,18 +606,27 @@ stats: Dict[str, Any] = {
     "cvd_diverge_long": 0,
     "whale_eye_block": 0,
     "whale_eye_pass": 0,
-    "regime_pass": 0,
-    "regime_block": 0,
-    "macro_pass": 0,
-    "macro_block": 0,
-    "sr_pass": 0,
+    "ai_auto_final_pass": 0,
+    "ai_auto_final_block": 0,
+    "ai_auto_late_short_block": 0,
+    "ai_auto_late_long_block": 0,
+    "ws_book_updates": 0,
+    "ws_trade_updates": 0,
+    "ws_spoofing_detected": 0,
     "sr_block": 0,
-    "pm_alert_sent": 0,
-    "backtest_run": 0,
+    "regime_block": 0,
+    "macro_block": 0,
+    "mistake_memory_learn": 0,
+    "mistake_memory_block": 0,
+    "backtest_runs": 0,
+    "backtest_cost_applied": 0,
+    "position_management_updates": 0,
+    "natural_language_hit": 0,
 }
 
 app = None
 deep_pointer = 0
+ai_pointer = 0
 
 
 # =========================================================
@@ -650,15 +702,12 @@ def ensure_memory_shape() -> None:
     memory.setdefault("stats", {})
     memory.setdefault("daily_short_sent", {})
     memory.setdefault("daily_long_sent", {})
+    memory.setdefault("ai_auto_sent_lock", {})
     memory.setdefault("last_signal_ts", 0.0)
     memory.setdefault("last_signal_attempt_ts", 0.0)
     memory.setdefault("last_diag_ts", 0.0)
-    # Eski sürümlerden kalmış kaldırılan katman kayıtlarını temizle.
-    for _legacy_key in ("ai" + "_auto_sent_lock", "ai" + "_auto_scan"):
-        memory.pop(_legacy_key, None)
-    memory.setdefault("position_manager", {})
-    memory.setdefault("backtests", {})
-    memory.setdefault("market_context", {})
+    memory.setdefault("ai_auto_scan", {})
+    memory.setdefault("mistake_memory", {})
 
 
 def load_memory() -> None:
@@ -757,52 +806,14 @@ def cleanup_memory() -> None:
                     daily_long_sent.pop(day_key, None)
             except Exception:
                 daily_long_sent.pop(day_key, None)
+    # AI otomatik sinyal tekrar kilitlerini temizle
+    ai_locks = memory.get("ai_auto_sent_lock", {})
+    for lock_key in list(ai_locks.keys()):
+        rec = ai_locks.get(lock_key, {}) if isinstance(ai_locks.get(lock_key, {}), dict) else {}
+        ts = safe_float(rec.get("ts", 0))
+        if not ts or now_ts - ts > max(PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC, 24 * 3600):
+            ai_locks.pop(lock_key, None)
     cleanup_symbol_fail_state()
-
-
-def cleanup_runtime_caches() -> Dict[str, int]:
-    """REST polling cache'lerini periyodik temizler; uzun çalışmada bellek şişmesini azaltır."""
-    now_ts = time.time()
-    removed = {"kline": 0, "ticker": 0, "orderbook": 0, "trades": 0, "oi": 0, "funding": 0, "cvd": 0}
-
-    def prune_tuple_cache(cache: Dict[str, Tuple[float, Any]], ttl: float, key: str) -> None:
-        for ck in list(cache.keys()):
-            try:
-                ts = safe_float(cache[ck][0], 0)
-            except Exception:
-                ts = 0
-            if not ts or now_ts - ts > ttl:
-                cache.pop(ck, None)
-                removed[key] += 1
-
-    prune_tuple_cache(kline_cache, max(60, KLINE_CACHE_SEC * 20), "kline")
-    prune_tuple_cache(ticker_cache, max(60, TICKER_CACHE_SEC * 20), "ticker")
-    prune_tuple_cache(orderbook_cache, max(30, GORUNMEYEN_YUZ_BOOK_CACHE_SEC * 40), "orderbook")
-    prune_tuple_cache(trades_cache, max(30, GORUNMEYEN_YUZ_TRADE_CACHE_SEC * 40), "trades")
-    prune_tuple_cache(oi_cache, max(120, OI_CACHE_SEC * 10), "oi")
-    prune_tuple_cache(funding_cache, max(300, FUNDING_CACHE_SEC * 10), "funding")
-    prune_tuple_cache(cvd_cache, max(120, CVD_CACHE_SEC * 10), "cvd")
-
-    # Orderbook/spoofing hafızası küçük kalsın.
-    for mp in (orderbook_memory, spoofing_memory):
-        for sym in list(mp.keys()):
-            ts = safe_float(mp.get(sym, {}).get("ts", 0), 0)
-            if not ts or now_ts - ts > 3600:
-                mp.pop(sym, None)
-
-    return removed
-
-
-async def cache_cleanup_loop() -> None:
-    while True:
-        try:
-            removed = cleanup_runtime_caches()
-            total_removed = sum(removed.values())
-            if total_removed:
-                logger.info("Cache temizlendi: %s", removed)
-        except Exception as e:
-            logger.exception("cache_cleanup_loop hata: %s", e)
-        await asyncio.sleep(300)
 
 
 def note_symbol_fail(symbol: str, reason: str = "") -> None:
@@ -866,168 +877,56 @@ def _binance_fapi_get(path: str, params: Optional[Dict[str, Any]] = None, signed
 
 
 async def get_open_interest(symbol: str) -> Dict[str, Any]:
-    """Open Interest verisi.
-
-    Önce Binance Futures denenir. Binance verisi gelmezse OKX public open-interest
-    endpointine otomatik düşer. Böylece BTC-USDT-SWAP gibi OKX sembollerinde Whale Eye
-    OI kör kalmaz.
-    """
+    """Binance Futures Open Interest verisi"""
     if not OI_ENGINE_ENABLED:
-        return {"enabled": False, "source": "KAPALI", "oi": 0, "oi_change_pct": 0, "reason": "OI motoru kapalı"}
+        return {"enabled": False, "oi": 0, "oi_change_pct": 0}
 
-    okx_symbol = normalize_symbol(symbol)
-    binance_symbol = normalize_binance_symbol(symbol)
-    cache_key = f"OI:{okx_symbol}"
+    symbol = normalize_binance_symbol(symbol)
+    cache_key = f"OI:{symbol}"
     cached = oi_cache.get(cache_key)
     now_ts = time.time()
     if cached and now_ts - cached[0] <= OI_CACHE_SEC:
         return cached[1]
 
-    errors: List[str] = []
-
-    # 1) Binance USD-M Futures OI
     try:
         data = await asyncio.to_thread(
             _binance_fapi_get,
             "/fapi/v1/openInterest",
-            {"symbol": binance_symbol}
+            {"symbol": symbol}
         )
         oi = safe_float(data.get("openInterest", 0))
-        if oi > 0:
-            result = {
-                "enabled": True,
-                "source": "BINANCE_FAPI",
-                "oi": oi,
-                "timestamp": now_ts,
-                "reason": "Binance Futures OI okundu",
-            }
-            oi_cache[cache_key] = (now_ts, result)
-            return result
-        errors.append("Binance OI boş/0 döndü")
+        result = {"enabled": True, "oi": oi, "timestamp": now_ts}
+        oi_cache[cache_key] = (now_ts, result)
+        return result
     except Exception as e:
-        err = f"Binance OI hata: {type(e).__name__}: {str(e)[:160]}"
-        errors.append(err)
-        logger.warning("%s %s", err, binance_symbol)
-
-    # 2) OKX SWAP OI fallback
-    try:
-        data = await asyncio.to_thread(
-            _okx_get,
-            "/api/v5/public/open-interest",
-            {"instType": OKX_INST_TYPE, "instId": okx_symbol},
-        )
-        row = data[0] if data else {}
-        oi = safe_float(row.get("oi", 0))
-        oi_ccy = safe_float(row.get("oiCcy", 0))
-        oi_usd = safe_float(row.get("oiUsd", 0))
-        chosen_oi = oi if oi > 0 else (oi_ccy if oi_ccy > 0 else oi_usd)
-        if chosen_oi > 0:
-            row_ts = safe_float(row.get("ts", 0))
-            result = {
-                "enabled": True,
-                "source": "OKX_PUBLIC",
-                "oi": chosen_oi,
-                "oi_contracts": oi,
-                "oi_ccy": oi_ccy,
-                "oi_usd": oi_usd,
-                "timestamp": (row_ts / 1000.0) if row_ts > 10_000_000_000 else now_ts,
-                "reason": "Binance OI yoktu; OKX open-interest fallback okundu",
-                "fallback_errors": " | ".join(errors[:3]),
-            }
-            oi_cache[cache_key] = (now_ts, result)
-            return result
-        errors.append("OKX OI boş/0 döndü")
-    except Exception as e:
-        err = f"OKX OI hata: {type(e).__name__}: {str(e)[:160]}"
-        errors.append(err)
-        logger.warning("%s %s", err, okx_symbol)
-
-    return {
-        "enabled": False,
-        "source": "VERI_YOK",
-        "oi": 0,
-        "oi_change_pct": 0,
-        "reason": "OI verisi alınamadı: " + " | ".join(errors[:4]),
-    }
+        logger.warning("Binance OI alınamadı %s: %s", symbol, e)
+        return {"enabled": False, "oi": 0, "oi_change_pct": 0}
 
 
-async def get_funding_rate(symbol: str) -> Dict[str, Any]:
-    """Funding rate verisi.
-
-    Önce Binance Futures premiumIndex denenir. Binance verisi gelmezse OKX public
-    funding-rate endpointine düşer. Oran yüzde olarak döner: 0.0100 = %0.0100.
-    """
+async def get_funding_rate(symbol: str) -> float:
+    """Binance Futures Funding Rate"""
     if not FUNDING_ENGINE_ENABLED:
-        return {"enabled": False, "source": "KAPALI", "rate": 0.0, "reason": "Funding motoru kapalı"}
+        return 0.0
 
-    okx_symbol = normalize_symbol(symbol)
-    binance_symbol = normalize_binance_symbol(symbol)
-    cache_key = f"FUNDING:{okx_symbol}"
+    symbol = normalize_binance_symbol(symbol)
+    cache_key = f"FUNDING:{symbol}"
     cached = funding_cache.get(cache_key)
     now_ts = time.time()
     if cached and now_ts - cached[0] <= FUNDING_CACHE_SEC:
         return cached[1]
 
-    errors: List[str] = []
-
-    # 1) Binance funding
     try:
         data = await asyncio.to_thread(
             _binance_fapi_get,
             "/fapi/v1/premiumIndex",
-            {"symbol": binance_symbol}
+            {"symbol": symbol}
         )
-        if isinstance(data, dict) and "lastFundingRate" in data:
-            rate = safe_float(data.get("lastFundingRate", 0)) * 100.0
-            result = {
-                "enabled": True,
-                "source": "BINANCE_FAPI",
-                "rate": rate,
-                "next_funding_time": safe_float(data.get("nextFundingTime", 0)),
-                "mark_price": safe_float(data.get("markPrice", 0)),
-                "reason": "Binance Futures funding okundu",
-            }
-            funding_cache[cache_key] = (now_ts, result)
-            return result
-        errors.append("Binance funding boş/alan yok")
+        rate = safe_float(data.get("lastFundingRate", 0)) * 100.0
+        funding_cache[cache_key] = (now_ts, rate)
+        return rate
     except Exception as e:
-        err = f"Binance Funding hata: {type(e).__name__}: {str(e)[:160]}"
-        errors.append(err)
-        logger.warning("%s %s", err, binance_symbol)
-
-    # 2) OKX funding fallback
-    try:
-        data = await asyncio.to_thread(
-            _okx_get,
-            "/api/v5/public/funding-rate",
-            {"instId": okx_symbol},
-        )
-        row = data[0] if data else {}
-        if row and "fundingRate" in row:
-            rate = safe_float(row.get("fundingRate", 0)) * 100.0
-            result = {
-                "enabled": True,
-                "source": "OKX_PUBLIC",
-                "rate": rate,
-                "next_funding_time": safe_float(row.get("nextFundingTime", 0)),
-                "funding_time": safe_float(row.get("fundingTime", 0)),
-                "reason": "Binance funding yoktu; OKX funding-rate fallback okundu",
-                "fallback_errors": " | ".join(errors[:3]),
-            }
-            funding_cache[cache_key] = (now_ts, result)
-            return result
-        errors.append("OKX funding boş/alan yok")
-    except Exception as e:
-        err = f"OKX Funding hata: {type(e).__name__}: {str(e)[:160]}"
-        errors.append(err)
-        logger.warning("%s %s", err, okx_symbol)
-
-    return {
-        "enabled": False,
-        "source": "VERI_YOK",
-        "rate": 0.0,
-        "reason": "Funding verisi alınamadı: " + " | ".join(errors[:4]),
-    }
+        logger.warning("Binance Funding alınamadı %s: %s", symbol, e)
+        return 0.0
 # =========================================================
 # V6 WHALE EYE MOTORLARI
 # =========================================================
@@ -1053,17 +952,7 @@ async def analyze_whale_eye_open_interest(
 
     oi_data = await get_open_interest(symbol)
     if not oi_data.get("enabled"):
-        return {
-            "enabled": False,
-            "score": 0,
-            "divergence_type": "VERI_YOK",
-            "reason": oi_data.get("reason", "OI verisi alınamadı"),
-            "source": oi_data.get("source", "VERI_YOK"),
-            "current_oi": 0,
-            "prev_oi": 0,
-            "oi_change_pct": 0,
-            "price_change_pct": 0,
-        }
+        return {"enabled": False, "score": 0, "divergence_type": "VERI_YOK", "reason": "OI verisi alınamadı"}
 
     # Önceki OI değerini memory'den al
     oi_memory_key = f"oi_history:{symbol}"
@@ -1084,8 +973,7 @@ async def analyze_whale_eye_open_interest(
             "enabled": True,
             "score": 0,
             "divergence_type": "BEKLIYOR",
-            "reason": f"OI takip başladı. Güncel OI: {current_oi:,.0f} | Kaynak: {oi_data.get('source', '-')}",
-            "source": oi_data.get("source", "-"),
+            "reason": f"OI takip başladı. Güncel OI: {current_oi:,.0f}",
             "current_oi": current_oi,
             "prev_oi": 0,
             "oi_change_pct": 0,
@@ -1142,8 +1030,7 @@ async def analyze_whale_eye_open_interest(
         "enabled": True,
         "score": round(score, 2),
         "divergence_type": divergence_type,
-        "reason": (" | ".join(reasons) if reasons else "OI fiyat uyumlu, balina izi yok") + f" | Kaynak: {oi_data.get('source', '-')}",
-        "source": oi_data.get("source", "-"),
+        "reason": " | ".join(reasons) if reasons else "OI fiyat uyumlu, balina izi yok",
         "current_oi": current_oi,
         "prev_oi": prev_oi,
         "oi_change_pct": round(oi_change_pct, 2),
@@ -1167,19 +1054,10 @@ async def analyze_whale_eye_funding(
     if not FUNDING_ENGINE_ENABLED:
         return {"enabled": False, "score": 0, "funding_signal": "KAPALI", "reason": "Funding motoru kapalı"}
 
-    funding_data = await get_funding_rate(symbol)
-    if not funding_data.get("enabled"):
-        return {
-            "enabled": False,
-            "score": 0,
-            "funding_signal": "VERI_YOK",
-            "funding_rate": 0.0,
-            "source": funding_data.get("source", "VERI_YOK"),
-            "reason": funding_data.get("reason", "Funding verisi alınamadı"),
-        }
+    rate = await get_funding_rate(symbol)
 
-    rate = safe_float(funding_data.get("rate", 0.0))
-    source = str(funding_data.get("source", "-"))
+    if rate == 0.0:
+        return {"enabled": False, "score": 0, "funding_signal": "VERI_YOK", "reason": "Funding verisi alınamadı"}
 
     score = 0.0
     signal = "NÖTR"
@@ -1223,9 +1101,7 @@ async def analyze_whale_eye_funding(
         "score": round(score, 2),
         "funding_rate": round(rate, 4),
         "funding_signal": signal,
-        "source": source,
-        "next_funding_time": funding_data.get("next_funding_time", 0),
-        "reason": (" | ".join(reasons) if reasons else f"Funding nötr %{rate:.4f}") + f" | Kaynak: {source}",
+        "reason": " | ".join(reasons) if reasons else f"Funding nötr %{rate:.4f}"
     }
 
 
@@ -1273,6 +1149,36 @@ async def analyze_whale_eye_spoofing(
     spoof_detected = False
     spoof_type = "YOK"
     reasons: List[str] = []
+
+    # V6.1 PRO: WebSocket book geçmişiyle gerçek duvar koy-çek davranışı
+    hist = list(ws_book_history.get(symbol_okx, []))
+    if PRO_WS_ENABLED and len(hist) >= 3:
+        recent = [h for h in hist if now_ts - safe_float(h.get("ts", 0)) <= PRO_WS_SPOOF_WINDOW_SEC]
+        if len(recent) >= 2:
+            max_bid = max(safe_float(h.get("bid_near", 0)) for h in recent)
+            min_bid = min(safe_float(h.get("bid_near", 0)) for h in recent)
+            max_ask = max(safe_float(h.get("ask_near", 0)) for h in recent)
+            min_ask = min(safe_float(h.get("ask_near", 0)) for h in recent)
+            if max_bid > 0 and min_bid < max_bid * PRO_WS_SPOOF_MIN_DROP_RATIO:
+                spoof_detected = True
+                spoof_type = "WS_ALIS_DUVARI_CEKILDI"
+                if direction == "SHORT":
+                    score += SPOOFING_SHORT_SCORE_BONUS * 1.25
+                reasons.append("🪤 WS: alış duvarı kısa sürede çekildi, sahte destek izi")
+                stats["ws_spoofing_detected"] = stats.get("ws_spoofing_detected", 0) + 1
+            if max_ask > 0 and min_ask < max_ask * PRO_WS_SPOOF_MIN_DROP_RATIO:
+                spoof_detected = True
+                spoof_type = "WS_SATIS_DUVARI_CEKILDI"
+                if direction == "LONG":
+                    score += SPOOFING_LONG_SCORE_BONUS * 1.25
+                reasons.append("🪤 WS: satış duvarı kısa sürede çekildi, sahte direnç izi")
+                stats["ws_spoofing_detected"] = stats.get("ws_spoofing_detected", 0) + 1
+            if min_ask > 0 and max_ask > min_ask * PRO_WS_SPOOF_MIN_GROWTH_RATIO and direction == "SHORT":
+                score += SPOOFING_SHORT_SCORE_BONUS * 0.55
+                reasons.append("🧱 WS: üst satış duvarı hızlı büyüdü")
+            if min_bid > 0 and max_bid > min_bid * PRO_WS_SPOOF_MIN_GROWTH_RATIO and direction == "LONG":
+                score += SPOOFING_LONG_SCORE_BONUS * 0.55
+                reasons.append("🧱 WS: alt alış duvarı hızlı büyüdü")
 
     # Alış duvarı aniden kayboldu mu? (Spoofing - satıcı tuzağı)
     if prev_bid_near > 0 and bid_near < prev_bid_near * 0.4 and time_diff <= SPOOFING_WALL_VANISH_SEC:
@@ -1653,14 +1559,150 @@ async def get_24h_tickers() -> Dict[str, Dict[str, Any]]:
         return cached[1] if cached else {}
 
 
+
+# =========================================================
+# V6.1 PRO WEBSOCKET CANLI VERİ MOTORU
+# =========================================================
+def _book_metrics_from_rows(symbol: str, bids: List[List[Any]], asks: List[List[Any]], source: str = "REST") -> Dict[str, Any]:
+    symbol = normalize_symbol(symbol)
+    if not bids or not asks:
+        return {"enabled": True, "ok": False, "source": source, "reason": "empty bids/asks"}
+    best_bid = safe_float(bids[0][0])
+    best_ask = safe_float(asks[0][0])
+    mid = (best_bid + best_ask) / 2.0 if best_bid > 0 and best_ask > 0 else 0.0
+    band = mid * 0.0018 if mid > 0 else 0.0
+    bid_near = ask_near = bid_total = ask_total = 0.0
+    for row in bids:
+        px = safe_float(row[0]); sz = safe_float(row[1]); notional = px * sz
+        bid_total += notional
+        if mid > 0 and px >= mid - band:
+            bid_near += notional
+    for row in asks:
+        px = safe_float(row[0]); sz = safe_float(row[1]); notional = px * sz
+        ask_total += notional
+        if mid > 0 and px <= mid + band:
+            ask_near += notional
+    total_near = bid_near + ask_near
+    book_pressure = ((ask_near - bid_near) / total_near) if total_near > 0 else 0.0
+    total_all = bid_total + ask_total
+    full_book_pressure = ((ask_total - bid_total) / total_all) if total_all > 0 else 0.0
+    prev = orderbook_memory.get(symbol, {})
+    prev_bid_near = safe_float(prev.get("bid_near", 0))
+    prev_ask_near = safe_float(prev.get("ask_near", 0))
+    bid_wall_pulled = prev_bid_near > 0 and bid_near < prev_bid_near * 0.58
+    ask_wall_stacked = prev_ask_near > 0 and ask_near > prev_ask_near * 1.35
+    bid_wall_added = prev_bid_near > 0 and bid_near > prev_bid_near * 1.35
+    ask_wall_pulled = prev_ask_near > 0 and ask_near < prev_ask_near * 0.58
+    orderbook_memory[symbol] = {
+        "ts": time.time(), "bid_near": bid_near, "ask_near": ask_near,
+        "bid_total": bid_total, "ask_total": ask_total,
+        "book_pressure": book_pressure, "full_book_pressure": full_book_pressure,
+    }
+    return {
+        "enabled": True, "ok": True, "source": source,
+        "best_bid": best_bid, "best_ask": best_ask, "mid": mid,
+        "spread_pct": abs(pct_change(best_bid, best_ask)) if best_bid > 0 and best_ask > 0 else 0.0,
+        "bid_near": bid_near, "ask_near": ask_near, "bid_total": bid_total, "ask_total": ask_total,
+        "book_pressure": round(book_pressure, 4), "full_book_pressure": round(full_book_pressure, 4),
+        "bid_wall_pulled": bid_wall_pulled, "ask_wall_stacked": ask_wall_stacked,
+        "bid_wall_added": bid_wall_added, "ask_wall_pulled": ask_wall_pulled,
+        "reason": f"OKX orderbook {source} okundu.",
+    }
+
+
+def _ws_symbol_list() -> List[str]:
+    symbols = [normalize_symbol(s) for s in COINS if not is_blocked_coin_symbol(s)]
+    if PRO_WS_SYMBOL_LIMIT > 0:
+        symbols = symbols[:PRO_WS_SYMBOL_LIMIT]
+    return symbols
+
+
+async def okx_public_ws_loop() -> None:
+    if not PRO_WS_ENABLED:
+        return
+    if websockets is None:
+        ws_runtime_state["last_error"] = "websockets paketi yok"
+        logger.warning("WebSocket kapalı: websockets paketi yok")
+        return
+    while True:
+        try:
+            symbols = _ws_symbol_list()
+            if not symbols:
+                await asyncio.sleep(10)
+                continue
+            args = []
+            for sym in symbols:
+                args.append({"channel": PRO_WS_BOOK_CHANNEL, "instId": sym})
+                args.append({"channel": PRO_WS_TRADE_CHANNEL, "instId": sym})
+            async with websockets.connect(PRO_WS_URL, ping_interval=20, ping_timeout=20, close_timeout=10, max_size=4_000_000) as ws:
+                ws_runtime_state.update({"connected": True, "last_error": "-", "subscriptions": len(args)})
+                await ws.send(json.dumps({"op": "subscribe", "args": args}))
+                logger.info("OKX WS bağlandı | sembol=%s | kanal=%s", len(symbols), len(args))
+                async for raw in ws:
+                    ws_runtime_state["last_msg_ts"] = time.time()
+                    try:
+                        msg = json.loads(raw)
+                    except Exception:
+                        continue
+                    if "event" in msg:
+                        continue
+                    arg = msg.get("arg", {}) or {}
+                    channel = str(arg.get("channel", ""))
+                    inst_id = normalize_symbol(str(arg.get("instId", "")))
+                    data = msg.get("data", []) or []
+                    if not inst_id or not data:
+                        continue
+                    if channel == PRO_WS_BOOK_CHANNEL:
+                        item = data[0]
+                        bids = item.get("bids", []) or []
+                        asks = item.get("asks", []) or []
+                        metrics = _book_metrics_from_rows(inst_id, bids, asks, "WS")
+                        ws_orderbooks[inst_id] = {"ts": time.time(), "bids": bids, "asks": asks, "metrics": metrics}
+                        hist = ws_book_history.setdefault(inst_id, deque(maxlen=max(10, PRO_WS_BOOK_HISTORY)))
+                        hist.append({"ts": time.time(), "bid_near": metrics.get("bid_near", 0), "ask_near": metrics.get("ask_near", 0), "pressure": metrics.get("book_pressure", 0)})
+                        stats["ws_book_updates"] = stats.get("ws_book_updates", 0) + 1
+                    elif channel == PRO_WS_TRADE_CHANNEL:
+                        dq = ws_trades.setdefault(inst_id, deque(maxlen=max(20, PRO_WS_TRADE_HISTORY)))
+                        for t in data:
+                            dq.append({"px": safe_float(t.get("px", 0)), "sz": safe_float(t.get("sz", 0)), "side": str(t.get("side", "")).lower(), "ts": safe_float(t.get("ts", 0))})
+                            stats["ws_trade_updates"] = stats.get("ws_trade_updates", 0) + 1
+        except asyncio.CancelledError:
+            ws_runtime_state["connected"] = False
+            raise
+        except Exception as e:
+            ws_runtime_state["connected"] = False
+            ws_runtime_state["last_error"] = str(e)[:180]
+            ws_runtime_state["reconnects"] = int(ws_runtime_state.get("reconnects", 0)) + 1
+            logger.warning("OKX WS koptu, yeniden bağlanacak: %s", e)
+            await asyncio.sleep(max(1.0, PRO_WS_RECONNECT_SEC))
+
+
+def ws_is_fresh(symbol: str) -> bool:
+    symbol = normalize_symbol(symbol)
+    rec = ws_orderbooks.get(symbol)
+    return bool(rec and time.time() - safe_float(rec.get("ts", 0)) <= PRO_WS_STALE_SEC)
+
+
 async def get_okx_orderbook(symbol: str, depth: int = 50) -> Dict[str, Any]:
     if not GORUNMEYEN_YUZ_ORDERBOOK_ENABLED:
         return {"enabled": False, "ok": False, "reason": "Orderbook motoru kapalı."}
 
     symbol = normalize_symbol(symbol)
+    now_ts = time.time()
+
+    # Öncelik: WebSocket canlı book
+    if PRO_WS_ENABLED:
+        ws_rec = ws_orderbooks.get(symbol)
+        if ws_rec and now_ts - safe_float(ws_rec.get("ts", 0)) <= PRO_WS_STALE_SEC:
+            metrics = copy.deepcopy(ws_rec.get("metrics", {}))
+            if metrics:
+                metrics["source"] = "WS"
+                metrics["reason"] = "OKX orderbook WS canlı akıştan okundu."
+                stats["orderbook_ok"] += 1
+                return metrics
+
     cache_key = f"BOOK:{symbol}:{depth}"
     cached = orderbook_cache.get(cache_key)
-    now_ts = time.time()
     if cached and now_ts - cached[0] <= GORUNMEYEN_YUZ_BOOK_CACHE_SEC:
         return cached[1]
 
@@ -1675,78 +1717,9 @@ async def get_okx_orderbook(symbol: str, depth: int = 50) -> Dict[str, Any]:
         book = data[0]
         bids = book.get("bids", []) or []
         asks = book.get("asks", []) or []
-        if not bids or not asks:
-            raise RuntimeError("empty bids/asks")
-
-        best_bid = safe_float(bids[0][0])
-        best_ask = safe_float(asks[0][0])
-        mid = (best_bid + best_ask) / 2.0 if best_bid > 0 and best_ask > 0 else 0.0
-        band = mid * 0.0018 if mid > 0 else 0.0
-
-        bid_near = 0.0
-        ask_near = 0.0
-        bid_total = 0.0
-        ask_total = 0.0
-
-        for row in bids:
-            px = safe_float(row[0])
-            sz = safe_float(row[1])
-            notional = px * sz
-            bid_total += notional
-            if mid > 0 and px >= mid - band:
-                bid_near += notional
-
-        for row in asks:
-            px = safe_float(row[0])
-            sz = safe_float(row[1])
-            notional = px * sz
-            ask_total += notional
-            if mid > 0 and px <= mid + band:
-                ask_near += notional
-
-        total_near = bid_near + ask_near
-        book_pressure = ((ask_near - bid_near) / total_near) if total_near > 0 else 0.0
-        total_all = bid_total + ask_total
-        full_book_pressure = ((ask_total - bid_total) / total_all) if total_all > 0 else 0.0
-
-        prev = orderbook_memory.get(symbol, {})
-        prev_bid_near = safe_float(prev.get("bid_near", 0))
-        prev_ask_near = safe_float(prev.get("ask_near", 0))
-
-        bid_wall_pulled = prev_bid_near > 0 and bid_near < prev_bid_near * 0.58
-        ask_wall_stacked = prev_ask_near > 0 and ask_near > prev_ask_near * 1.35
-        bid_wall_added = prev_bid_near > 0 and bid_near > prev_bid_near * 1.35
-        ask_wall_pulled = prev_ask_near > 0 and ask_near < prev_ask_near * 0.58
-
-        orderbook_memory[symbol] = {
-            "ts": now_ts,
-            "bid_near": bid_near,
-            "ask_near": ask_near,
-            "bid_total": bid_total,
-            "ask_total": ask_total,
-            "book_pressure": book_pressure,
-            "full_book_pressure": full_book_pressure,
-        }
-
-        result = {
-            "enabled": True,
-            "ok": True,
-            "best_bid": best_bid,
-            "best_ask": best_ask,
-            "mid": mid,
-            "spread_pct": abs(pct_change(best_bid, best_ask)) if best_bid > 0 and best_ask > 0 else 0.0,
-            "bid_near": bid_near,
-            "ask_near": ask_near,
-            "bid_total": bid_total,
-            "ask_total": ask_total,
-            "book_pressure": round(book_pressure, 4),
-            "full_book_pressure": round(full_book_pressure, 4),
-            "bid_wall_pulled": bid_wall_pulled,
-            "ask_wall_stacked": ask_wall_stacked,
-            "bid_wall_added": bid_wall_added,
-            "ask_wall_pulled": ask_wall_pulled,
-            "reason": "OKX orderbook okundu.",
-        }
+        result = _book_metrics_from_rows(symbol, bids, asks, "REST")
+        if not result.get("ok"):
+            raise RuntimeError(result.get("reason", "empty bids/asks"))
         orderbook_cache[cache_key] = (now_ts, result)
         stats["orderbook_ok"] += 1
         return result
@@ -1761,9 +1734,21 @@ async def get_okx_recent_trades(symbol: str, limit: int = 100) -> List[Dict[str,
         return []
 
     symbol = normalize_symbol(symbol)
+    now_ts = time.time()
+
+    # Öncelik: WebSocket canlı trades
+    if PRO_WS_ENABLED:
+        dq = ws_trades.get(symbol)
+        if dq:
+            rows = list(dq)[-min(limit, len(dq)):]
+            if rows:
+                newest_ts = max(safe_float(x.get("ts", 0)) for x in rows) / 1000.0
+                if newest_ts <= 0 or now_ts - newest_ts <= max(PRO_WS_STALE_SEC * 3, 20):
+                    stats["trades_ok"] += 1
+                    return rows
+
     cache_key = f"TRADES:{symbol}:{limit}"
     cached = trades_cache.get(cache_key)
-    now_ts = time.time()
     if cached and now_ts - cached[0] <= GORUNMEYEN_YUZ_TRADE_CACHE_SEC:
         return cached[1]
 
@@ -1775,12 +1760,7 @@ async def get_okx_recent_trades(symbol: str, limit: int = 100) -> List[Dict[str,
         )
         rows: List[Dict[str, Any]] = []
         for row in data or []:
-            rows.append({
-                "px": safe_float(row.get("px", 0)),
-                "sz": safe_float(row.get("sz", 0)),
-                "side": str(row.get("side", "")).lower(),
-                "ts": safe_float(row.get("ts", 0)),
-            })
+            rows.append({"px": safe_float(row.get("px", 0)), "sz": safe_float(row.get("sz", 0)), "side": str(row.get("side", "")).lower(), "ts": safe_float(row.get("ts", 0))})
         trades_cache[cache_key] = (now_ts, rows)
         stats["trades_ok"] += 1
         return rows
@@ -2936,9 +2916,6 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
     breakdown = short_breakdown_confirmation(k1, k5)
     breakdown_score = safe_float(breakdown.get("score", 0))
     ict_context = build_ict_zone_context(k1, k5, k15, last_price)
-    market_regime = build_market_regime_context(k1, k5, k15, last_price)
-    support_resistance = build_support_resistance_context(k1, k5, k15, last_price, "SHORT")
-    macro_context = await build_macro_correlation_context(symbol, k5, "SHORT")
 
     # =========================================================
     # V6 WHALE EYE - BURADA ÇAĞIRILIYOR
@@ -3114,9 +3091,6 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
         "reason": " | ".join(reasons[:15]) if reasons else "Sebep yok",
         "ict": ict_context,
         "whale_eye": whale_eye,  # V6 YENI
-        "market_regime": market_regime,
-        "macro": macro_context,
-        "support_resistance": support_resistance,
     }
 
     if (strong_breakout_continue or trend_guard.get("blocked")) and whale_confidence not in ("ÇOK_YÜKSEK", "YÜKSEK"):
@@ -3147,7 +3121,6 @@ async def analyze_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]]) -> O
             stats["quality_gate_block"] += 1
             final_payload["reason"] = f"{final_payload['reason']} | Kalite kapısı: {q_reason}"
 
-    final_payload["position_plan"] = build_position_plan({**final_payload, "direction": "SHORT"})
     final_payload = enforce_single_short_al_rules(final_payload)
     return final_payload
 
@@ -3196,9 +3169,6 @@ async def analyze_long_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]])
     ict = build_ict_zone_context(k1, k5, k15, last_price)
     if not ict.get("enabled") or safe_float(ict.get("range_pct", 0)) < ICT_MIN_RANGE_PCT:
         return None
-    market_regime = build_market_regime_context(k1, k5, k15, last_price)
-    support_resistance = build_support_resistance_context(k1, k5, k15, last_price, "LONG")
-    macro_context = await build_macro_correlation_context(symbol, k5, "LONG")
 
     drop_20m = max(0.0, abs(pct_change(max(c1[-21:-1]), last_price))) if len(c1) >= 22 and last_price < max(c1[-21:-1]) else 0.0
     drop_1h = max(0.0, abs(pct_change(max(c5[-13:-1]), last_price))) if len(c5) >= 14 and last_price < max(c5[-13:-1]) else 0.0
@@ -3347,495 +3317,24 @@ async def analyze_long_symbol(symbol: str, tickers24: Dict[str, Dict[str, Any]])
         "ict": ict, "long_close_gate": close_gate,
         "trade_flow": flow, "orderbook": book,
         "whale_eye": whale_eye,
-        "market_regime": market_regime,
-        "macro": macro_context,
-        "support_resistance": support_resistance,
         "invisible_class": "ICT LONG", "invisible_score": round(quality_score * 12.0, 1),
         "invisible_decision": "LONG_AL_SERBEST" if stage == "SIGNAL" else "LONG_TAKIP",
     }
-    payload["position_plan"] = build_position_plan(payload)
     return enforce_single_long_al_rules(payload)
 
-
-
-def _bucket_float(v: float, cuts: List[float], names: List[str]) -> str:
-    try:
-        v = float(v)
-    except Exception:
-        return "NA"
-    for i, cut in enumerate(cuts):
-        if v < cut:
-            return names[i]
-    return names[-1]
-
-
-def _tp_rank(level: str) -> int:
-    return {"STOP": -1, "NÖTR": 0, "NO_HIT": 0, "YOK": 0, "TP1": 1, "TP2": 2, "TP3": 3}.get(str(level).upper(), 0)
-
-
-
-
-
-# =========================================================
-# PRO PLUS: DESTEK/DİRENÇ + REJİM + MAKRO + POZİSYON + BACKTEST
-# =========================================================
-def _pivot_levels(values_high: List[float], values_low: List[float], left: int = 2, right: int = 2) -> Tuple[List[float], List[float]]:
-    resistances: List[float] = []
-    supports: List[float] = []
-    n = min(len(values_high), len(values_low))
-    if n < left + right + 3:
-        return supports, resistances
-    for i in range(left, n - right):
-        h = values_high[i]
-        l = values_low[i]
-        prev_h = values_high[i-left:i]
-        next_h = values_high[i+1:i+right+1]
-        prev_l = values_low[i-left:i]
-        next_l = values_low[i+1:i+right+1]
-        if prev_h and next_h and h >= max(prev_h) and h >= max(next_h):
-            resistances.append(h)
-        if prev_l and next_l and l <= min(prev_l) and l <= min(next_l):
-            supports.append(l)
-    return supports, resistances
-
-
-def _cluster_levels(levels: List[float], price: float, cluster_pct: float = SR_CLUSTER_PCT) -> List[Dict[str, Any]]:
-    clean = sorted([x for x in levels if x > 0])
-    if not clean:
-        return []
-    clusters: List[List[float]] = []
-    for lv in clean:
-        if not clusters:
-            clusters.append([lv])
-            continue
-        center = avg(clusters[-1])
-        if abs(pct_change(center, lv)) <= cluster_pct:
-            clusters[-1].append(lv)
-        else:
-            clusters.append([lv])
-    out: List[Dict[str, Any]] = []
-    for vals in clusters:
-        center = avg(vals)
-        out.append({"level": center, "touches": len(vals), "distance_pct": pct_change(price, center) if price > 0 else 0.0, "score": len(vals)})
-    return sorted(out, key=lambda x: (abs(safe_float(x.get("distance_pct", 999))), -safe_float(x.get("score", 0))))
-
-
-def build_support_resistance_context(k1: List[List[Any]], k5: List[List[Any]], k15: List[List[Any]], price: float, direction: str = "SHORT") -> Dict[str, Any]:
-    if not SR_ENGINE_ENABLED:
-        return {"enabled": False, "decision": "KAPALI", "passed": True, "reason": "SR motoru kapalı"}
-    if len(k1) < 40 or len(k5) < 30:
-        return {"enabled": True, "decision": "VERI_YOK", "passed": False, "reason": "SR verisi yetersiz"}
-    direction = (direction or "SHORT").upper()
-    h1, l1 = highs(k1[-SR_LOOKBACK_1M:]), lows(k1[-SR_LOOKBACK_1M:])
-    h5, l5 = highs(k5[-SR_LOOKBACK_5M:]), lows(k5[-SR_LOOKBACK_5M:])
-    h15, l15 = highs(k15[-48:]) if len(k15) >= 48 else highs(k15), lows(k15[-48:]) if len(k15) >= 48 else lows(k15)
-    s1, r1 = _pivot_levels(h1, l1, SR_PIVOT_LEFT, SR_PIVOT_RIGHT)
-    s5, r5 = _pivot_levels(h5, l5, SR_PIVOT_LEFT, SR_PIVOT_RIGHT)
-    s15, r15 = _pivot_levels(h15, l15, SR_PIVOT_LEFT, SR_PIVOT_RIGHT)
-    support_clusters = _cluster_levels(s1 + s5 + s15 + [min(l1[-20:])], price)
-    resistance_clusters = _cluster_levels(r1 + r5 + r15 + [max(h1[-20:])], price)
-    below = [x for x in support_clusters if safe_float(x.get("level")) < price]
-    above = [x for x in resistance_clusters if safe_float(x.get("level")) > price]
-    nearest_support = max(below, key=lambda x: safe_float(x.get("level")), default={})
-    nearest_resistance = min(above, key=lambda x: safe_float(x.get("level")), default={})
-    sup = safe_float(nearest_support.get("level", 0))
-    res = safe_float(nearest_resistance.get("level", 0))
-    support_dist = abs(pct_change(price, sup)) if sup > 0 else 999.0
-    resistance_dist = abs(pct_change(price, res)) if res > 0 else 999.0
-    if direction == "LONG":
-        near_zone = support_dist <= SR_NEAR_LEVEL_PCT or price <= safe_float(nearest_support.get("level", 0)) * (1 + SR_NEAR_LEVEL_PCT/100.0) if sup > 0 else False
-        wall_side = "direnç"
-        decision = "LONG_SR_TEMIZ" if near_zone else "LONG_DESTEK_ZAYIF"
-        passed = True
-        reason = f"LONG: destek {fmt_num(sup)} mesafe %{support_dist:.2f}, direnç {fmt_num(res)} mesafe %{resistance_dist:.2f}"
-    else:
-        near_zone = resistance_dist <= SR_NEAR_LEVEL_PCT or price >= safe_float(nearest_resistance.get("level", 0)) * (1 - SR_NEAR_LEVEL_PCT/100.0) if res > 0 else False
-        wall_side = "destek"
-        decision = "SHORT_SR_TEMIZ" if near_zone else "SHORT_DIRENC_ZAYIF"
-        passed = True
-        reason = f"SHORT: direnç {fmt_num(res)} mesafe %{resistance_dist:.2f}, destek {fmt_num(sup)} mesafe %{support_dist:.2f}"
-    return {
-        "enabled": True,
-        "passed": passed,
-        "decision": decision,
-        "direction": direction,
-        "nearest_support": sup,
-        "nearest_resistance": res,
-        "support_distance_pct": round(support_dist, 2),
-        "resistance_distance_pct": round(resistance_dist, 2),
-        "support_score": safe_float(nearest_support.get("score", 0)),
-        "resistance_score": safe_float(nearest_resistance.get("score", 0)),
-        "near_trade_zone": bool(near_zone),
-        "wall_side": wall_side,
-        "reason": reason,
-    }
-
-
-def sr_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
-    sr = payload.get("support_resistance") if isinstance(payload.get("support_resistance"), dict) else {}
-    if not SR_ENGINE_ENABLED or not sr or not sr.get("enabled"):
-        return True, "SR kapısı kapalı/yok"
-    direction = str(payload.get("direction", "SHORT")).upper()
-    price = safe_float(payload.get("price", 0))
-    stop = safe_float(payload.get("stop", 0))
-    tp1 = safe_float(payload.get("tp1", 0))
-    sup = safe_float(sr.get("nearest_support", 0))
-    res = safe_float(sr.get("nearest_resistance", 0))
-    vol1 = safe_float(payload.get("vol_ratio_1m", 0))
-    vol5 = safe_float(payload.get("vol_ratio_5m", 0))
-    flow = payload.get("trade_flow") if isinstance(payload.get("trade_flow"), dict) else {}
-    buy_to_sell = safe_float(flow.get("buy_to_sell", 0))
-    sell_to_buy = safe_float(flow.get("sell_to_buy", 0))
-    reasons: List[str] = []
-    passed = True
-    if direction == "LONG":
-        if sup <= 0 or safe_float(sr.get("support_distance_pct", 999)) > SR_NEAR_LEVEL_PCT:
-            passed = False; reasons.append(f"LONG destekten uzak %{safe_float(sr.get('support_distance_pct', 999)):.2f}")
-        if SR_BLOCK_IF_TP1_WALL and res > 0 and res < tp1 * (1 + SR_TP1_ROOM_BUFFER_PCT/100.0):
-            passed = False; reasons.append(f"TP1 önünde yakın direnç {fmt_num(res)}")
-        if sup > 0 and stop > sup * (1 - SR_STOP_BEHIND_LEVEL_PCT/100.0):
-            passed = False; reasons.append(f"stop desteğin arkasında değil: stop {fmt_num(stop)} destek {fmt_num(sup)}")
-        if SR_BLOCK_WEAK_ZONE_LOW_FLOW and vol1 < LONG_WEAK_VOL_1M_BLOCK and vol5 < LONG_WEAK_VOL_5M_BLOCK and buy_to_sell < LONG_MIN_BUY_TO_SELL:
-            passed = False; reasons.append(f"LONG hacim/flow zayıf: vol {vol1:.2f}/{vol5:.2f}, flow {buy_to_sell:.2f}")
-    else:
-        if res <= 0 or safe_float(sr.get("resistance_distance_pct", 999)) > SR_NEAR_LEVEL_PCT:
-            passed = False; reasons.append(f"SHORT dirençten uzak %{safe_float(sr.get('resistance_distance_pct', 999)):.2f}")
-        if SR_BLOCK_IF_TP1_WALL and sup > 0 and sup > tp1 * (1 - SR_TP1_ROOM_BUFFER_PCT/100.0):
-            passed = False; reasons.append(f"TP1 önünde yakın destek {fmt_num(sup)}")
-        if res > 0 and stop < res * (1 + SR_STOP_BEHIND_LEVEL_PCT/100.0):
-            passed = False; reasons.append(f"stop direncin arkasında değil: stop {fmt_num(stop)} direnç {fmt_num(res)}")
-        if SR_BLOCK_WEAK_ZONE_LOW_FLOW and vol1 < 0.55 and vol5 < 0.35 and sell_to_buy < 1.10:
-            passed = False; reasons.append(f"SHORT hacim/flow zayıf: vol {vol1:.2f}/{vol5:.2f}, flow {sell_to_buy:.2f}")
-    return passed, " | ".join(reasons) if reasons else sr.get("reason", "SR temiz")
-
-
-def build_market_regime_context(k1: List[List[Any]], k5: List[List[Any]], k15: List[List[Any]], price: float) -> Dict[str, Any]:
-    if not MARKET_REGIME_ENGINE_ENABLED:
-        return {"enabled": False, "regime": "KAPALI", "bias": "NÖTR", "passed": True, "reason": "Rejim motoru kapalı"}
-    if len(k5) < 55 or len(k15) < 30:
-        return {"enabled": True, "regime": "VERI_YOK", "bias": "NÖTR", "passed": False, "reason": "Rejim verisi yetersiz"}
-    c5 = closes(k5); h5 = highs(k5); l5 = lows(k5); v5 = volumes(k5)
-    c15 = closes(k15)
-    e9 = ema(c5, 9); e21 = ema(c5, 21); e50 = ema(c5, 50)
-    r5 = rsi(c5, 14); atr5 = atr(k5, 14)
-    width_pct = abs(pct_change(min(l5[-30:]), max(h5[-30:]))) if min(l5[-30:]) > 0 else 0.0
-    ema_gap = pct_change(e50[-1], price) if e50[-1] > 0 else 0.0
-    vol_ratio = safe_float(v5[-1]) / max(avg(v5[-20:-1]), 1e-9)
-    last_range = max(h5[-1] - l5[-1], 1e-9)
-    atr_now = max(atr5[-1], price * 0.001)
-    breakout_up = c5[-1] > max(h5[-20:-1]) and last_range >= atr_now * REGIME_BREAKOUT_ATR_MULT
-    breakout_down = c5[-1] < min(l5[-20:-1]) and last_range >= atr_now * REGIME_BREAKOUT_ATR_MULT
-    uptrend = price > e9[-1] > e21[-1] > e50[-1] and ema_gap >= REGIME_TREND_EMA_GAP_PCT
-    downtrend = price < e9[-1] < e21[-1] < e50[-1] and ema_gap <= -REGIME_TREND_EMA_GAP_PCT
-    range_mode = width_pct <= REGIME_RANGE_MAX_WIDTH_PCT and not breakout_up and not breakout_down
-    if breakout_up:
-        regime, bias = "BREAKOUT_UP", "LONG"
-    elif breakout_down:
-        regime, bias = "BREAKDOWN_DOWN", "SHORT"
-    elif uptrend and r5[-1] >= 55:
-        regime, bias = "TREND_UP", "LONG"
-    elif downtrend and r5[-1] <= 45:
-        regime, bias = "TREND_DOWN", "SHORT"
-    elif range_mode:
-        regime, bias = "RANGE", "NÖTR"
-    elif r5[-1] >= 68 and vol_ratio >= 1.15:
-        regime, bias = "PUMP_DEVAM", "LONG"
-    elif r5[-1] <= 34 and vol_ratio >= 1.15:
-        regime, bias = "DUSUS_DEVAM", "SHORT"
-    else:
-        regime, bias = "KARISIK", "NÖTR"
-    score = 0.0
-    if bias == "LONG": score += 2.0
-    if bias == "SHORT": score -= 2.0
-    return {"enabled": True, "regime": regime, "bias": bias, "score": round(score, 2), "width_pct": round(width_pct, 2), "ema_gap_pct": round(ema_gap, 2), "vol_ratio": round(vol_ratio, 2), "reason": f"Rejim {regime} | bias {bias} | genişlik %{width_pct:.2f} | EMA50 fark %{ema_gap:.2f} | vol x{vol_ratio:.2f}"}
-
-
-def regime_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
-    reg = payload.get("market_regime") if isinstance(payload.get("market_regime"), dict) else {}
-    if not MARKET_REGIME_ENGINE_ENABLED or not reg or not reg.get("enabled"):
-        return True, "Rejim kapısı kapalı/yok"
-    direction = str(payload.get("direction", "SHORT")).upper()
-    regime = str(reg.get("regime", ""))
-    bias = str(reg.get("bias", "NÖTR"))
-    if not REGIME_BLOCK_COUNTER_TREND:
-        return True, reg.get("reason", "Rejim pass")
-    if direction == "LONG" and bias == "SHORT" and regime in ("TREND_DOWN", "BREAKDOWN_DOWN", "DUSUS_DEVAM"):
-        return False, f"Rejim LONG'a ters: {regime}"
-    if direction == "SHORT" and bias == "LONG" and regime in ("TREND_UP", "BREAKOUT_UP", "PUMP_DEVAM"):
-        return False, f"Rejim SHORT'a ters: {regime}"
-    return True, reg.get("reason", "Rejim temiz")
-
-
-def _series_returns(values: List[float], lookback: int = 30) -> List[float]:
-    vals = values[-lookback:]
-    out = []
-    for i in range(1, len(vals)):
-        out.append(pct_change(vals[i-1], vals[i]))
-    return out
-
-
-def _corr(a: List[float], b: List[float]) -> float:
-    n = min(len(a), len(b))
-    if n < 8:
-        return 0.0
-    a = a[-n:]; b = b[-n:]
-    ma, mb = avg(a), avg(b)
-    da = [x-ma for x in a]; db = [x-mb for x in b]
-    va = sum(x*x for x in da); vb = sum(x*x for x in db)
-    if va <= 0 or vb <= 0:
-        return 0.0
-    return sum(x*y for x,y in zip(da, db)) / ((va ** 0.5) * (vb ** 0.5))
-
-
-async def build_macro_correlation_context(symbol: str, k5_symbol: List[List[Any]], direction: str = "SHORT") -> Dict[str, Any]:
-    if not MACRO_CORRELATION_ENGINE_ENABLED:
-        return {"enabled": False, "decision": "KAPALI", "passed": True, "reason": "Makro motor kapalı"}
-    direction = (direction or "SHORT").upper()
-    btc_symbol = normalize_symbol(MACRO_SYMBOLS[0] if MACRO_SYMBOLS else "BTC-USDT-SWAP")
-    if normalize_symbol(symbol) == btc_symbol:
-        return {"enabled": True, "decision": "ANA_COIN", "passed": True, "reason": "Ana makro coin kendisi"}
-    btc1 = await get_klines(btc_symbol, "1m", 80)
-    btc5 = await get_klines(btc_symbol, "5m", 80)
-    if len(btc1) < 30 or len(btc5) < 30 or len(k5_symbol) < 30:
-        return {"enabled": True, "decision": "VERI_YOK", "passed": True, "reason": "BTC/makro verisi yetersiz"}
-    b1 = closes(btc1); b5 = closes(btc5); s5 = closes(k5_symbol)
-    btc_5m = pct_change(b1[-6], b1[-1]) if len(b1) >= 6 else 0.0
-    btc_20m = pct_change(b1[-21], b1[-1]) if len(b1) >= 21 else 0.0
-    btc_1h = pct_change(b5[-13], b5[-1]) if len(b5) >= 13 else 0.0
-    corr = _corr(_series_returns(s5, 35), _series_returns(b5, 35))
-    passed = True
-    decision = "MAKRO_TEMIZ"
-    reasons = [f"BTC 5m/20m/1h %{btc_5m:.2f}/%{btc_20m:.2f}/%{btc_1h:.2f}", f"corr {corr:.2f}"]
-    if direction == "LONG" and btc_20m <= -MACRO_BTC_DROP_BLOCK_LONG_PCT and (corr >= MACRO_HIGH_CORR_MIN or MACRO_BLOCK_IF_HIGH_CORR_COUNTER):
-        passed = False; decision = "LONG_MAKRO_BLOK"; reasons.append("BTC düşerken altcoin LONG riskli")
-    if direction == "SHORT" and btc_20m >= MACRO_BTC_PUMP_BLOCK_SHORT_PCT and (corr >= MACRO_HIGH_CORR_MIN or MACRO_BLOCK_IF_HIGH_CORR_COUNTER):
-        passed = False; decision = "SHORT_MAKRO_BLOK"; reasons.append("BTC yükselirken altcoin SHORT riskli")
-    if abs(btc_5m) >= MACRO_BTC_FAST_MOVE_5M_PCT:
-        reasons.append("BTC hızlı hareket ediyor; slippage/ters iğne riski")
-    return {"enabled": True, "passed": passed, "decision": decision, "btc_5m_pct": round(btc_5m, 2), "btc_20m_pct": round(btc_20m, 2), "btc_1h_pct": round(btc_1h, 2), "correlation": round(corr, 2), "reason": " | ".join(reasons)}
-
-
-def macro_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
-    macro = payload.get("macro") if isinstance(payload.get("macro"), dict) else {}
-    if not MACRO_CORRELATION_ENGINE_ENABLED or not macro or not macro.get("enabled"):
-        return True, "Makro kapısı kapalı/yok"
-    return bool(macro.get("passed", True)), str(macro.get("reason", "Makro temiz"))
-
-
-def format_pro_plus_blocks(res: Dict[str, Any]) -> str:
-    parts: List[str] = []
-    reg = res.get("market_regime") if isinstance(res.get("market_regime"), dict) else {}
-    macro = res.get("macro") if isinstance(res.get("macro"), dict) else {}
-    sr = res.get("support_resistance") if isinstance(res.get("support_resistance"), dict) else {}
-    pm = res.get("position_plan") if isinstance(res.get("position_plan"), dict) else {}
-    if reg:
-        parts.append(f"\n🧭 Piyasa Rejimi: {reg.get('regime','-')} | Bias: {reg.get('bias','-')} | {reg.get('reason','-')}")
-    if macro:
-        parts.append(f"\n🌍 Makro/BTC: {macro.get('decision','-')} | {macro.get('reason','-')}")
-    if sr:
-        parts.append(
-            f"\n🧱 Destek/Direnç: {sr.get('decision','-')} | Destek {fmt_num(sr.get('nearest_support',0))} (%{sr.get('support_distance_pct','-')}) | "
-            f"Direnç {fmt_num(sr.get('nearest_resistance',0))} (%{sr.get('resistance_distance_pct','-')}) | {sr.get('reason','-')}"
-        )
-    if pm:
-        parts.append(f"\n🎛️ Pozisyon Planı: {pm.get('summary','-')}")
-    return "".join(parts)
-
-
-def build_position_plan(payload: Dict[str, Any]) -> Dict[str, Any]:
-    direction = str(payload.get("direction", "SHORT")).upper()
-    entry = safe_float(payload.get("price", 0))
-    stop = safe_float(payload.get("stop", 0))
-    tp1 = safe_float(payload.get("tp1", 0))
-    tp2 = safe_float(payload.get("tp2", 0))
-    tp3 = safe_float(payload.get("tp3", 0))
-    if entry <= 0:
-        return {"enabled": False, "summary": "Entry yok"}
-    be = entry
-    summary = (
-        f"TP1 %{POSITION_TP1_PARTIAL_PCT:.0f} kısmi çıkış + stop BE; "
-        f"TP2 %{POSITION_TP2_PARTIAL_PCT:.0f} ek çıkış; kalan TP3/trailing. "
-        f"BE={fmt_num(be)} | Stop={fmt_num(stop)} | TP1={fmt_num(tp1)} | TP2={fmt_num(tp2)} | TP3={fmt_num(tp3)}"
-    )
-    return {"enabled": POSITION_MANAGER_ENABLED, "direction": direction, "break_even_stop": be, "tp1_partial_pct": POSITION_TP1_PARTIAL_PCT, "tp2_partial_pct": POSITION_TP2_PARTIAL_PCT, "trailing_enabled": POSITION_TRAILING_ENABLED, "summary": summary}
-
-
-def position_manager_evaluate(k1: List[List[Any]], rec: Dict[str, Any]) -> Dict[str, Any]:
-    direction = str(rec.get("direction", "SHORT")).upper()
-    entry = safe_float(rec.get("entry", 0)); stop = safe_float(rec.get("stop", 0))
-    tp1 = safe_float(rec.get("tp1", 0)); tp2 = safe_float(rec.get("tp2", 0)); tp3 = safe_float(rec.get("tp3", 0))
-    if not k1 or entry <= 0:
-        return {"action": "YOK", "reason": "veri yok"}
-    last = safe_float(k1[-1][4])
-    high = max(highs(k1[-30:])) if len(k1) >= 30 else max(highs(k1))
-    low = min(lows(k1[-30:])) if len(k1) >= 30 else min(lows(k1))
-    atr_now = max(atr(k1, 14)[-1], entry * 0.001)
-    profit_pct = pct_change(entry, last) if direction == "LONG" else pct_change(entry, last) * -1
-    pm_sent = rec.setdefault("pm_sent", {})
-    if direction == "LONG":
-        if last >= tp1 and not pm_sent.get("tp1"):
-            return {"action": "TP1", "new_stop": entry if POSITION_MOVE_STOP_BE_AFTER_TP1 else stop, "reason": f"TP1 görüldü; %{POSITION_TP1_PARTIAL_PCT:.0f} kısmi çıkış + stop BE önerisi"}
-        if last >= tp2 and not pm_sent.get("tp2"):
-            trail = max(entry, last - atr_now * POSITION_TRAIL_ATR_MULT)
-            return {"action": "TP2", "new_stop": trail, "reason": f"TP2 görüldü; ek kâr alma + trailing stop {fmt_num(trail)}"}
-        if POSITION_TRAILING_ENABLED and profit_pct >= POSITION_TRAIL_AFTER_PROFIT_PCT:
-            trail = max(entry, high - atr_now * POSITION_TRAIL_ATR_MULT)
-            old_trail = safe_float(rec.get("trailing_stop", 0))
-            if trail > old_trail * 1.001:
-                return {"action": "TRAIL", "new_stop": trail, "reason": f"LONG kâr %{profit_pct:.2f}; trailing stop {fmt_num(trail)}"}
-    else:
-        if last <= tp1 and not pm_sent.get("tp1"):
-            return {"action": "TP1", "new_stop": entry if POSITION_MOVE_STOP_BE_AFTER_TP1 else stop, "reason": f"TP1 görüldü; %{POSITION_TP1_PARTIAL_PCT:.0f} kısmi çıkış + stop BE önerisi"}
-        if last <= tp2 and not pm_sent.get("tp2"):
-            trail = min(entry, last + atr_now * POSITION_TRAIL_ATR_MULT)
-            return {"action": "TP2", "new_stop": trail, "reason": f"TP2 görüldü; ek kâr alma + trailing stop {fmt_num(trail)}"}
-        if POSITION_TRAILING_ENABLED and profit_pct >= POSITION_TRAIL_AFTER_PROFIT_PCT:
-            trail = min(entry, low + atr_now * POSITION_TRAIL_ATR_MULT)
-            old_trail = safe_float(rec.get("trailing_stop", 999999999))
-            if old_trail == 999999999 or trail < old_trail * 0.999:
-                return {"action": "TRAIL", "new_stop": trail, "reason": f"SHORT kâr %{profit_pct:.2f}; trailing stop {fmt_num(trail)}"}
-    return {"action": "YOK", "reason": f"aktif kâr %{profit_pct:.2f}, yeni PM yok"}
-
-
-async def position_management_loop() -> None:
-    if not POSITION_MANAGER_ENABLED:
-        return
-    while True:
-        try:
-            now_ts = time.time()
-            for key, rec in list(memory.get("follows", {}).items()):
-                if rec.get("done"):
-                    continue
-                if now_ts - safe_float(rec.get("sent_ts", 0)) < POSITION_PM_MIN_AGE_SEC:
-                    continue
-                sym = normalize_symbol(str(rec.get("symbol", key)).replace("LONG:", "").replace("SHORT:", ""))
-                k1 = await get_klines(sym, "1m", 90)
-                action = position_manager_evaluate(k1, rec)
-                act = str(action.get("action", "YOK"))
-                if act == "YOK":
-                    continue
-                rec.setdefault("pm_sent", {})[act.lower()] = time.time()
-                new_stop = safe_float(action.get("new_stop", 0))
-                if new_stop > 0:
-                    rec["trailing_stop"] = new_stop
-                if POSITION_SEND_PM_ALERTS:
-                    text = (
-                        f"🎛️ POZİSYON YÖNETİMİ\n"
-                        f"⏰ {tr_str()}\n"
-                        f"🎯 {sym} | {rec.get('direction','-')}\n"
-                        f"Eylem: {act}\n"
-                        f"Yeni önerilen stop: {fmt_num(new_stop) if new_stop > 0 else '-'}\n"
-                        f"Not: {action.get('reason','-')}\n"
-                        f"Uyarı: Bu mod emir göndermez; yönetim uyarısı üretir."
-                    )
-                    if await safe_send_telegram(text):
-                        stats["pm_alert_sent"] = stats.get("pm_alert_sent", 0) + 1
-        except Exception as e:
-            logger.exception("position_management_loop hata: %s", e)
-        await asyncio.sleep(max(30, POSITION_MANAGER_CHECK_INTERVAL_SEC))
-
-
-def _backtest_make_levels(direction: str, entry: float) -> Tuple[float, float, float, float]:
-    if direction == "LONG":
-        stop = entry * (1 - BACKTEST_RISK_STOP_PCT/100.0)
-        return stop, entry * (1 + BACKTEST_TP1_PCT/100.0), entry * (1 + BACKTEST_TP2_PCT/100.0), entry * (1 + BACKTEST_TP3_PCT/100.0)
-    stop = entry * (1 + BACKTEST_RISK_STOP_PCT/100.0)
-    return stop, entry * (1 - BACKTEST_TP1_PCT/100.0), entry * (1 - BACKTEST_TP2_PCT/100.0), entry * (1 - BACKTEST_TP3_PCT/100.0)
-
-
-def run_simple_backtest_on_klines(symbol: str, k1: List[List[Any]], direction: str, bars: int = BACKTEST_DEFAULT_BARS) -> Dict[str, Any]:
-    direction = (direction or "SHORT").upper()
-    data = k1[-max(80, min(len(k1), bars)):]
-    if len(data) < 90:
-        return {"ok": False, "reason": "Backtest için mum yetersiz"}
-    closes_v = closes(data); highs_v = highs(data); lows_v = lows(data); vols_v = volumes(data)
-    rs = rsi(closes_v, 14); e9 = ema(closes_v, 9); e21 = ema(closes_v, 21)
-    signals = []
-    last_i = -999
-    for i in range(55, len(data) - BACKTEST_FORWARD_BARS):
-        if i - last_i < BACKTEST_MIN_SIGNAL_GAP_BARS:
-            continue
-        window_high = max(highs_v[i-50:i]); window_low = min(lows_v[i-50:i]); price = closes_v[i]
-        width = max(window_high - window_low, 1e-9)
-        pos = (price - window_low) / width
-        vol_ratio = vols_v[i] / max(avg(vols_v[i-20:i]), 1e-9)
-        trigger = False
-        if direction == "SHORT":
-            trigger = pos >= 0.70 and price < e9[i] and rs[i] < rs[i-1] and vol_ratio >= 0.55
-        else:
-            trigger = pos <= 0.35 and price > e9[i] and rs[i] > rs[i-1] and vol_ratio >= 0.45
-        if not trigger:
-            continue
-        entry = price
-        stop, tp1, tp2, tp3 = _backtest_make_levels(direction, entry)
-        result = evaluate_tp_stop_path(data[i+1:i+1+BACKTEST_FORWARD_BARS], direction, time.time()-999999, entry, stop, tp1, tp2, tp3)
-        signals.append({"i": i, "entry": entry, "outcome": result.get("trade_outcome", result.get("outcome")), "potential": result.get("potential_outcome"), "checked": result.get("checked")})
-        last_i = i
-    total = len(signals); wins = sum(1 for x in signals if str(x.get("outcome", "")).startswith("TP")); stops = sum(1 for x in signals if x.get("outcome") == "STOP")
-    tp3 = sum(1 for x in signals if x.get("potential") == "TP3")
-    rate = wins / total * 100.0 if total else 0.0
-    return {"ok": True, "symbol": symbol, "direction": direction, "signals": total, "wins": wins, "stops": stops, "tp3_potential": tp3, "win_rate": round(rate, 1), "last": signals[-8:]}
-
-
-async def cmd_backtest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not BACKTEST_ENGINE_ENABLED:
-        await update.message.reply_text("Backtest motoru kapalı.")
-        return
-    if not context.args:
-        await update.message.reply_text("Kullanım: /backtest LDOUSDT LONG 240")
-        return
-    sym = normalize_symbol(context.args[0])
-    direction = str(context.args[1]).upper() if len(context.args) >= 2 else "SHORT"
-    bars = int(safe_float(context.args[2], BACKTEST_DEFAULT_BARS)) if len(context.args) >= 3 else BACKTEST_DEFAULT_BARS
-    k1 = await get_klines(sym, "1m", min(300, max(120, bars)))
-    res = run_simple_backtest_on_klines(sym, k1, direction, bars)
-    stats["backtest_run"] = stats.get("backtest_run", 0) + 1
-    if not res.get("ok"):
-        await update.message.reply_text(f"Backtest yapılamadı: {res.get('reason')}")
-        return
-    lines = [
-        "🧪 BACKTEST / REPLAY RAPORU",
-        f"Coin: {sym} | Yön: {direction} | Mum: {bars}",
-        f"Sinyal: {res.get('signals')} | TP: {res.get('wins')} | STOP: {res.get('stops')} | Başarı: %{res.get('win_rate')}",
-        f"TP3 potansiyel: {res.get('tp3_potential')}",
-        "Not: Bu hızlı replay testidir; canlı emir garantisi değildir."
-    ]
-    await update.message.reply_text("\n".join(lines))
-
-
-async def cmd_pozisyon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    follows = memory.get("follows", {})
-    active = [(k, v) for k, v in follows.items() if isinstance(v, dict) and not v.get("done")]
-    if not active:
-        await update.message.reply_text("Aktif takip edilen pozisyon yok.")
-        return
-    lines = ["🎛️ AKTİF POZİSYON YÖNETİMİ"]
-    for k, rec in active[:12]:
-        lines.append(f"- {rec.get('symbol')} {rec.get('direction')} | entry {fmt_num(rec.get('entry',0))} | stop {fmt_num(rec.get('stop',0))} | trailing {fmt_num(rec.get('trailing_stop',0)) if rec.get('trailing_stop') else '-'}")
-    await update.message.reply_text("\n".join(lines))
 
 def enforce_single_short_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
     p = copy.deepcopy(payload)
     if p.get("stage") != "SIGNAL":
         return p
 
+    # AI otomatik köprü sinyali geldiyse ana pump-only filtresi tekrar susturmasın.
+    # Bu sinyal zaten AI yön/edge/akış/risk kapısından geçmiştir.
+    if p.get("ai_auto_promoted"):
+        p["signal_label"] = "SHORT AL"
+        return p
 
     reason_text = str(p.get("reason", ""))
-    for gate_name, gate_fn, stat_key in (
-        ("Rejim", regime_final_gate, "regime_block"),
-        ("Makro", macro_final_gate, "macro_block"),
-        ("SR", sr_final_gate, "sr_block"),
-    ):
-        ok_gate, gate_reason = gate_fn(p)
-        if not ok_gate:
-            p["stage"] = "READY"
-            p["signal_label"] = "İÇ TAKİP"
-            p["reason"] = f"{reason_text} | {gate_name} kapısı blok: {gate_reason}"
-            stats[stat_key] = stats.get(stat_key, 0) + 1
-            return p
-        else:
-            pass_key = stat_key.replace("block", "pass")
-            stats[pass_key] = stats.get(pass_key, 0) + 1
     pump_20m = safe_float(p.get("pump_20m", 0))
     pump_1h = safe_float(p.get("pump_1h", 0))
 
@@ -3858,24 +3357,14 @@ def enforce_single_long_al_rules(payload: Dict[str, Any]) -> Dict[str, Any]:
     if p.get("stage") != "SIGNAL":
         return p
 
+    # AI otomatik köprü sinyali geldiyse LONG ICT-only filtresi tekrar susturmasın.
+    # AI kendi yön/edge/akış/risk kapısından geçmedikçe buraya gelemez.
+    if p.get("ai_auto_promoted"):
+        p["signal_label"] = "LONG AL"
+        return p
 
     ict = p.get("ict") if isinstance(p.get("ict"), dict) else {}
     reason = str(p.get("reason", ""))
-    for gate_name, gate_fn, stat_key in (
-        ("Rejim", regime_final_gate, "regime_block"),
-        ("Makro", macro_final_gate, "macro_block"),
-        ("SR", sr_final_gate, "sr_block"),
-    ):
-        ok_gate, gate_reason = gate_fn(p)
-        if not ok_gate:
-            p["stage"] = "READY"
-            p["signal_label"] = "İÇ TAKİP"
-            p["reason"] = f"{reason} | {gate_name} kapısı blok: {gate_reason}"
-            stats[stat_key] = stats.get(stat_key, 0) + 1
-            return p
-        else:
-            pass_key = stat_key.replace("block", "pass")
-            stats[pass_key] = stats.get(pass_key, 0) + 1
 
     if ICT_REQUIRE_PRO_CONTEXT_FOR_SIGNAL and safe_float(ict.get("long_pro_score", 0)) < ICT_LONG_MIN_PRO_SCORE:
         p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"
@@ -3929,22 +3418,14 @@ def format_whale_eye_block(res: Dict[str, Any]) -> str:
     lines.append(f"├─ Uyumsuzluk Sayısı: {whale.get('divergence_count', 0)}")
 
     # Open Interest
-    if oi.get("enabled"):
-        lines.append(f"├─ OI Kaynak: {oi.get('source', '-')}")
     if oi.get("enabled") and oi.get("divergence_type", "NÖTR") != "NÖTR":
         lines.append(f"├─ OI Delta: {oi.get('divergence_type', '-')}")
         if oi.get("oi_change_pct"):
             lines.append(f"│  └─ OI Değişim: %{oi.get('oi_change_pct', 0):.2f} | Fiyat: %{oi.get('price_change_pct', 0):.2f}")
-    elif not oi.get("enabled"):
-        lines.append(f"├─ OI: VERİ YOK ({str(oi.get('reason', '-'))[:90]})")
 
     # Funding Rate
-    if funding.get("enabled"):
-        lines.append(f"├─ Funding Kaynak: {funding.get('source', '-')}")
     if funding.get("enabled") and funding.get("funding_signal", "NÖTR") != "NÖTR":
         lines.append(f"├─ Funding: {funding.get('funding_signal', '-')} (%{funding.get('funding_rate', 0):.4f})")
-    elif not funding.get("enabled"):
-        lines.append(f"├─ Funding: VERİ YOK ({str(funding.get('reason', '-'))[:90]})")
 
     # CVD
     if cvd.get("enabled") and cvd.get("divergence", "NÖTR") != "NÖTR":
@@ -4008,7 +3489,7 @@ def build_signal_message(res: Dict[str, Any]) -> str:
         f"📝 Not: {res['reason'][:400]}\n"
         f"📡 Veri: OKX SWAP | Binance teyit: {confirm_status}"
     )
-    return base + format_whale_eye_block(res) + format_ict_block(res) + format_pro_plus_blocks(res)
+    return base + format_whale_eye_block(res) + format_ict_block(res)
 
 
 def build_long_signal_message(res: Dict[str, Any]) -> str:
@@ -4033,7 +3514,7 @@ def build_long_signal_message(res: Dict[str, Any]) -> str:
         f"📝 Not: {res['reason'][:400]}\n"
         f"📡 Veri: OKX SWAP + ICT LONG"
     )
-    return base + format_whale_eye_block(res) + format_ict_block(res) + format_pro_plus_blocks(res)
+    return base + format_whale_eye_block(res) + format_ict_block(res)
 
 
 def build_heartbeat_message() -> str:
@@ -4057,10 +3538,17 @@ def build_heartbeat_message() -> str:
         f"📊 Coin: {len(COINS)} | Sıcak: {hot_count} | Trend: {trend_watch_count} | Bloklu: {get_blocked_symbol_count()}\n"
         f"📨 Sinyal: SHORT {total_short}/{DAILY_SHORT_TOTAL_LIMIT} | LONG {total_long}/{LONG_DAILY_TOTAL_LIMIT} | Toplam: {total_signal}\n"
         f"🎯 Başarı: TP={tp_count} Stop={stop_count} | %{winrate:.1f}\n"
-        f"🐋 Whale Eye: OI={stats['oi_short_diverge']} Fund={stats['funding_short_bonus']} Spoof={stats['spoofing_detected']} CVD={stats['cvd_diverge_short']}\n"
+        f"📡 WebSocket: {'AÇIK' if ws_runtime_state.get('connected') else 'KAPALI'} | book={len(ws_orderbooks)} | trades={sum(len(v) for v in ws_trades.values())} | age={time.time()-safe_float(ws_runtime_state.get('last_msg_ts', 0)) if ws_runtime_state.get('last_msg_ts') else 9999:.1f}s | reconnect={ws_runtime_state.get('reconnects', 0)}\n"
+        f"🐋 Whale Eye: OI={stats['oi_short_diverge']} Fund={stats['funding_short_bonus']} Spoof={stats['spoofing_detected']} CVD={stats['cvd_diverge_short']} | WS Spoof={stats.get('ws_spoofing_detected', 0)}\n"
+        f"🧠 AI Otomatik: {'AÇIK' if PRO_AI_AUTOSIGNAL_LOOP_ENABLED else 'KAPALI'} | AI sinyal: {stats.get('professional_ai_auto_signal', 0)} | AI sessiz: {stats.get('professional_ai_silent', 0)}\n"
+        f"🧠 AI Final: geçiş={stats.get('ai_auto_final_pass', 0)} | blok={stats.get('ai_auto_final_block', 0)} | geç short={stats.get('ai_auto_late_short_block', 0)} | geç long={stats.get('ai_auto_late_long_block', 0)}\n"
         f"🛡️ Kalite Blok: {stats['quality_gate_block']} | Kırılım Geçen: {stats['trend_breakdown_pass']} | Kapanış Blok: {stats['close_confirm_block']}\n"
+        f"🧱 SR/Rejim/Makro blok: {stats.get('sr_block', 0)} / {stats.get('regime_block', 0)} / {stats.get('macro_block', 0)}\n"
+        f"🧠 Hata Hafızası: öğrenme={stats.get('mistake_memory_learn', 0)} | blok={stats.get('mistake_memory_block', 0)}\n"
+        f"🧪 Backtest: {stats.get('backtest_runs', 0)} | maliyetli={stats.get('backtest_cost_applied', 0)}\n"
         f"🔧 API Fail: {stats['api_fail']} | Telegram Fail: {stats['telegram_fail']} | Analiz: {stats['analyzed']}\n"
-        f"📌 Son Sinyal: {last_sig_txt}"
+        f"📌 Son Sinyal: {last_sig_txt}\n"
+        f"WS hata: {ws_runtime_state.get('last_error', '-')}"
     )
 
 
@@ -4129,6 +3617,44 @@ def get_today_trade_sent_count(direction: str) -> int:
 
 def get_daily_trade_limit(direction: str) -> int:
     return LONG_DAILY_TOTAL_LIMIT if (direction or "SHORT").upper() == "LONG" else DAILY_SHORT_TOTAL_LIMIT
+
+
+def ai_auto_lock_key(symbol: str, direction: str) -> str:
+    return f"{(direction or '').upper()}:{normalize_symbol(symbol)}"
+
+
+def ai_auto_recently_locked(symbol: str, direction: str) -> bool:
+    direction = (direction or "").upper()
+    if direction not in ("LONG", "SHORT"):
+        return False
+    # Günlük kilit zaten varsa aynı coin/yön tekrar basılmasın.
+    if daily_trade_already_sent(normalize_symbol(symbol), direction):
+        return True
+    lock_key = ai_auto_lock_key(symbol, direction)
+    rec = memory.setdefault("ai_auto_sent_lock", {}).get(lock_key, {})
+    last_ts = safe_float(rec.get("ts", 0)) if isinstance(rec, dict) else 0.0
+    if last_ts and time.time() - last_ts < PRO_AI_AUTOSIGNAL_SAME_DIRECTION_COOLDOWN_SEC:
+        return True
+    # Aktif takipte aynı coin/yön varsa tekrar basma.
+    follow_key = f"{direction}:{normalize_symbol(symbol)}"
+    follow = memory.get("follows", {}).get(follow_key, {})
+    if isinstance(follow, dict) and follow and not bool(follow.get("done", False)):
+        return True
+    return False
+
+
+def mark_ai_auto_signal_lock(symbol: str, direction: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    direction = (direction or "").upper()
+    if direction not in ("LONG", "SHORT"):
+        return
+    sym = normalize_symbol(symbol)
+    memory.setdefault("ai_auto_sent_lock", {})[ai_auto_lock_key(sym, direction)] = {
+        "ts": time.time(),
+        "symbol": sym,
+        "direction": direction,
+        "price": safe_float((payload or {}).get("price", 0)),
+        "score": safe_float((payload or {}).get("score", 0)),
+    }
 
 
 def update_hot_memory(res: Dict[str, Any]) -> None:
@@ -4202,239 +3728,2908 @@ async def confirm_signal_on_binance(res: Dict[str, Any]) -> Dict[str, Any]:
     return {"status": status, "score": round(score, 2), "price_gap_pct": round(price_gap_pct, 2), "binance_symbol": symbol, "binance_price": last_price, "reason": " | ".join(reasons[:8]) if reasons else "Binance teyit nedeni yok."}
 
 
-
-
 # =========================================================
-# RAILWAY RUNTIME FIX — EKSİK ARKA PLAN DÖNGÜLERİ
+# PROFESYONEL KRİPTO YAPAY ZEKA V1 - GÖMÜLÜ MODÜL
 # =========================================================
-# Bu blok V6.2 profesyonel runtime dosyasında post_init içinde çağrılan
-# hot_scan_loop / deep_scan_loop / heartbeat_loop / followup_loop / save_loop
-# fonksiyonlarının eksik kalması nedeniyle eklendi.
-# Amaç: Railway'deki NameError çökmesini düzeltmek ve ana sinyal motorlarını çalıştırmak.
+# Not: Bu modül ayrı namespace içinde çalıştırılır. Ana botun safe_float,
+# fmt_num, rsi, ema, memory, stats gibi çalışan fonksiyonlarını ezmez.
+# Otomatik sinyalde dışarıya sadece mevcut LONG AL / SHORT AL mesajı gider.
+# Araştırma komutları: /zeka, /arastir, /yon, /ai_durum
+_PROFESSIONAL_AI_CODE = r'''
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+╔══════════════════════════════════════════════════════════════════════╗
+║  PROFESYONEL KRİPTO YAPAY ZEKA V1                                  ║
+║  Derin Araştırma + Yön Tahmini + LONG/SHORT AL Sinyal Beyni         ║
+║                                                                      ║
+║  Amaç:                                                              ║
+║  - Sadece hakem değil, tam kapsamlı araştırma yapan AI beyni.        ║
+║  - OKX canlı piyasa verisi + orderbook + trades + OI/funding.        ║
+║  - Opsiyonel haber/sosyal araştırma kaynakları.                     ║
+║  - DeepSeek ile tek, kısa, katı profesyonel karar.                   ║
+║  - Telegram otomatik sinyalde dışarıya sadece AL mesajı basar.       ║
+║  - BEKLE/RED/AI_YOK gibi iç karar etiketlerini dışarı göstermez.     ║
+║                                                                      ║
+║  ÖNEMLİ: Bu dosya işlem emri göndermez. Sinyal/araştırma üretir.     ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+GEREKENLER:
+    pip install aiohttp python-telegram-bot>=20.0
+
+.env / ortam değişkenleri:
+    DEEPSEEK_API_KEY=sk-...
+    DEEPSEEK_MODEL=deepseek-chat
+    PRO_AI_ENABLED=true
+    PRO_AI_FAIL_OPEN=false
+    PRO_AI_MIN_CONFIDENCE=65
+    PRO_AI_MIN_SIGNAL_SCORE=55
+    PRO_AI_TIMEOUT_SEC=7.5
+
+Opsiyonel araştırma API'leri:
+    CRYPTOPANIC_API_KEY=...
+    SERPAPI_API_KEY=...
+    NEWSAPI_KEY=...
+
+KULLANIM:
+    1) Bot başlarken:
+        await init_professional_crypto_ai()
+
+    2) Bot kapanırken:
+        await shutdown_professional_crypto_ai()
+
+    3) Mevcut analyze_symbol içinde final_payload SIGNAL olduktan sonra:
+        final_payload = await run_professional_ai_on_payload(
+            final_payload,
+            k1=k1,
+            k5=k5,
+            k15=k15,
+            k1h=k1h,
+            k4h=k4h,
+            orderbook=book,
+            trades=trades,
+        )
+        if final_payload.get("send_signal") is False:
+            return final_payload
+
+    4) Telegram handler:
+        add_professional_ai_handlers(application)
+
+Komutlar:
+    /zeka BTC
+    /arastir BTC
+    /yon BTC
+    /ai_durum
+
+Not:
+    Otomatik sinyal mesajında sadece LONG AL / SHORT AL görünür.
+    Uygun değilse ekstra mesaj basmaz.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import json
+import time
+import math
+import asyncio
+import hashlib
+import logging
+import html
+from urllib.parse import quote_plus
+from dataclasses import dataclass, asdict
+from typing import Any, Dict, List, Optional, Tuple
+from collections import deque
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+try:
+    import aiohttp
+except ImportError as exc:
+    raise RuntimeError("aiohttp eksik. Kurulum: pip install aiohttp") from exc
 
 
-def has_active_trade() -> bool:
-    if not ONE_ACTIVE_TRADE_MODE or ACTIVE_TRADE_BLOCK_SEC <= 0:
-        return False
-    now_ts = time.time()
-    for rec in memory.get("follows", {}).values():
-        if not isinstance(rec, dict) or rec.get("done"):
-            continue
-        sent_ts = safe_float(rec.get("sent_ts", rec.get("created_ts", 0)))
-        if sent_ts and now_ts - sent_ts < ACTIVE_TRADE_BLOCK_SEC:
-            return True
-    return False
+# Telegram importları opsiyonel tutuldu.
+try:
+    from telegram import Update
+    from telegram.ext import ContextTypes, CommandHandler
+    TELEGRAM_AVAILABLE = True
+except Exception:
+    Update = Any
+    ContextTypes = Any
+    CommandHandler = None
+    TELEGRAM_AVAILABLE = False
 
 
-def global_signal_gap_active() -> bool:
-    last_sig = safe_float(memory.get("last_signal_attempt_ts", 0)) or safe_float(memory.get("last_signal_ts", 0))
-    if not last_sig:
-        return False
-    gap = INTERNAL_SIGNAL_SPACING_SEC if SIGNAL_SPACING_SEC <= 0 else max(float(SIGNAL_SPACING_SEC), INTERNAL_SIGNAL_SPACING_SEC)
-    return time.time() - last_sig < gap
+# ============================================================
+# GENEL AYARLAR
+# ============================================================
 
+TR_TZ = ZoneInfo(os.getenv("TIMEZONE_NAME", "Europe/Istanbul"))
 
-def should_block_signal(symbol: str, stage: str, payload: Dict[str, Any]) -> bool:
-    direction = str(payload.get("direction", "SHORT")).upper()
-    if stage == "SIGNAL" and daily_trade_already_sent(symbol, direction):
-        return True
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip()
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
 
-    mem_symbol = f"{direction}:{normalize_symbol(symbol)}"
-    now_ts = time.time()
+PRO_AI_ENABLED = os.getenv("PRO_AI_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_FAIL_OPEN = os.getenv("PRO_AI_FAIL_OPEN", "false").lower() in ("1", "true", "yes", "on")
+PRO_AI_MIN_CONFIDENCE = float(os.getenv("PRO_AI_MIN_CONFIDENCE", "65"))
+PRO_AI_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_MIN_SIGNAL_SCORE", "55"))
+PRO_AI_TIMEOUT_SEC = float(os.getenv("PRO_AI_TIMEOUT_SEC", "7.5"))
+PRO_AI_MAX_CALLS_PER_MIN = int(os.getenv("PRO_AI_MAX_CALLS_PER_MIN", "22"))
+PRO_AI_CACHE_TTL_SEC = int(os.getenv("PRO_AI_CACHE_TTL_SEC", "90"))
 
-    sig_rec = get_signal_record(mem_symbol, stage)
-    sig_ts = safe_float(sig_rec.get("ts", 0))
-    if sig_ts and now_ts - sig_ts < ALERT_COOLDOWN_MIN * 60:
-        if better_than_previous(mem_symbol, stage, payload):
-            stats["cooldown_override"] += 1
-            return False
-        return True
+OKX_BASE_URL = os.getenv("OKX_BASE_URL", "https://www.okx.com").rstrip("/")
 
-    setup_rec = memory.get("signals", {}).get(f"setup:{mem_symbol}", {})
-    setup_ts = safe_float(setup_rec.get("ts", 0))
-    if setup_ts and now_ts - setup_ts < SETUP_COOLDOWN_MIN * 60:
-        if better_than_previous(mem_symbol, stage, payload):
-            stats["cooldown_override"] += 1
-            return False
-        return True
+CRYPTOPANIC_API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "").strip()
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "").strip()
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "").strip()
 
-    return False
+# Key gerektirmeyen Google News RSS motoru
+GOOGLE_NEWS_RSS_ENABLED = os.getenv("GOOGLE_NEWS_RSS_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_EXTERNAL_RESEARCH_ON_COMMAND = os.getenv("PRO_AI_EXTERNAL_RESEARCH_ON_COMMAND", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_EXTERNAL_RESEARCH_ON_SIGNAL = os.getenv("PRO_AI_EXTERNAL_RESEARCH_ON_SIGNAL", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_SIGNAL_NEWS_TIMEOUT_SEC = float(os.getenv("PRO_AI_SIGNAL_NEWS_TIMEOUT_SEC", "2.0"))
+PRO_AI_SIGNAL_NEWS_MAX_ITEMS = int(float(os.getenv("PRO_AI_SIGNAL_NEWS_MAX_ITEMS", "3")))
 
+# AI yön/zeka otomatik sinyal köprüsü:
+# AI raw action NO_SIGNAL dese bile; yön, skor, edge, risk ve akış birlikte güçlüyse
+# içeride LONG_AL / SHORT_AL'a çevrilir. Dışarıya yine sadece AL mesajı gider.
+PRO_AI_DIRECTION_AUTO_SIGNAL_ENABLED = os.getenv("PRO_AI_DIRECTION_AUTO_SIGNAL_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+PRO_AI_DIRECTION_MIN_CONFIDENCE = float(os.getenv("PRO_AI_DIRECTION_MIN_CONFIDENCE", "64"))
+PRO_AI_DIRECTION_MIN_SIGNAL_SCORE = float(os.getenv("PRO_AI_DIRECTION_MIN_SIGNAL_SCORE", "54"))
+PRO_AI_DIRECTION_MAX_RISK = float(os.getenv("PRO_AI_DIRECTION_MAX_RISK", "58"))
+PRO_AI_DIRECTION_MIN_EDGE = float(os.getenv("PRO_AI_DIRECTION_MIN_EDGE", "8"))
+PRO_AI_DIRECTION_MIN_FLOW_RATIO = float(os.getenv("PRO_AI_DIRECTION_MIN_FLOW_RATIO", "1.25"))
+PRO_AI_DIRECTION_MAX_SHORT_DROP_FROM_PEAK_PCT = float(os.getenv("PRO_AI_DIRECTION_MAX_SHORT_DROP_FROM_PEAK_PCT", "2.20"))
+PRO_AI_DIRECTION_MAX_LONG_BOUNCE_FROM_LOW_PCT = float(os.getenv("PRO_AI_DIRECTION_MAX_LONG_BOUNCE_FROM_LOW_PCT", "2.20"))
 
-def set_signal_memory(symbol: str, stage: str, payload: Dict[str, Any]) -> None:
-    direction = str(payload.get("direction", "SHORT")).upper()
-    sym = normalize_symbol(symbol)
-    mem_symbol = f"{direction}:{sym}"
-    memory.setdefault("signals", {})[signal_key(mem_symbol, stage)] = {
-        "ts": time.time(),
-        "stage": stage,
-        "direction": direction,
-        "price": payload.get("price"),
-        "score": payload.get("score"),
-    }
-    memory.setdefault("signals", {})[f"setup:{mem_symbol}"] = {
-        "ts": time.time(),
-        "stage": stage,
-        "direction": direction,
-        "price": payload.get("price"),
-        "score": payload.get("score"),
-    }
-    if stage == "SIGNAL":
-        set_daily_trade_sent(sym, payload)
-        memory["last_signal_ts"] = time.time()
-
-
-def signal_rank_score(res: Dict[str, Any]) -> float:
-    whale = res.get("whale_eye") if isinstance(res.get("whale_eye"), dict) else {}
-    ict = res.get("ict") if isinstance(res.get("ict"), dict) else {}
-    direction = str(res.get("direction", "SHORT")).upper()
-    ict_edge = 0.0
-    if ict.get("enabled"):
-        if direction == "LONG":
-            ict_edge = safe_float(ict.get("long_pro_score", 0)) - safe_float(ict.get("short_pro_score", 0))
-        else:
-            ict_edge = safe_float(ict.get("short_pro_score", 0)) - safe_float(ict.get("long_pro_score", 0))
-    return (
-        safe_float(res.get("score", 0))
-        + safe_float(res.get("quality_score", 0)) * 2.0
-        + safe_float(res.get("breakdown_score", 0)) * 1.4
-        + safe_float(res.get("rr", 0)) * 2.0
-        + safe_float(whale.get("total_score", 0)) * 1.3
-        + ict_edge * 1.8
+logger = logging.getLogger("professional_crypto_ai")
+if not logger.handlers:
+    logging.basicConfig(
+        level=os.getenv("LOG_LEVEL", "INFO"),
+        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
+
+
+professional_ai: Optional["ProfessionalCryptoAI"] = None
+
+
+# ============================================================
+# YARDIMCI FONKSİYONLAR
+# ============================================================
+
+def now_ts() -> float:
+    return time.time()
+
+
+def tr_now_str() -> str:
+    return datetime.now(TR_TZ).strftime("%d.%m.%Y %H:%M:%S")
+
+
+def safe_float(x: Any, default: float = 0.0) -> float:
+    try:
+        if x is None:
+            return default
+        if isinstance(x, str) and x.strip() in ("", "-", "None", "nan"):
+            return default
+        v = float(x)
+        if math.isnan(v) or math.isinf(v):
+            return default
+        return v
+    except Exception:
+        return default
+
+
+def safe_int(x: Any, default: int = 0) -> int:
+    try:
+        return int(float(x))
+    except Exception:
+        return default
+
+
+def avg(values: List[float], default: float = 0.0) -> float:
+    vals = [safe_float(v) for v in values if v is not None]
+    return sum(vals) / len(vals) if vals else default
+
+
+def pct_change(old: float, new: float) -> float:
+    old = safe_float(old)
+    new = safe_float(new)
+    if old == 0:
+        return 0.0
+    return (new - old) / abs(old) * 100.0
+
+
+def fmt_num(x: Any, digits: int = 6) -> str:
+    v = safe_float(x)
+    if abs(v) >= 1000:
+        return f"{v:.2f}"
+    if abs(v) >= 100:
+        return f"{v:.3f}"
+    if abs(v) >= 10:
+        return f"{v:.4f}"
+    if abs(v) >= 1:
+        return f"{v:.5f}"
+    return f"{v:.{digits}f}"
+
+
+def normalize_symbol(symbol: str) -> str:
+    s = (symbol or "").upper().strip()
+    s = s.replace("/", "-").replace("_", "-")
+    s = s.replace("USDTUSDT", "USDT")
+    if "-USDT-SWAP" in s:
+        return s
+    if s.endswith("USDT-SWAP") and "-" not in s:
+        base = s.replace("USDT-SWAP", "")
+        return f"{base}-USDT-SWAP"
+    if s.endswith("USDT") and "-USDT" not in s:
+        base = s[:-4]
+        return f"{base}-USDT-SWAP"
+    if s.endswith("-USDT"):
+        base = s.replace("-USDT", "")
+        return f"{base}-USDT-SWAP"
+    if "-" not in s:
+        return f"{s}-USDT-SWAP"
+    return s
+
+
+def base_coin(symbol: str) -> str:
+    s = normalize_symbol(symbol)
+    return s.split("-")[0]
+
+
+def closes(klines: List[List[Any]]) -> List[float]:
+    return [safe_float(k[4]) for k in klines if len(k) > 4]
+
+
+def opens(klines: List[List[Any]]) -> List[float]:
+    return [safe_float(k[1]) for k in klines if len(k) > 1]
+
+
+def highs(klines: List[List[Any]]) -> List[float]:
+    return [safe_float(k[2]) for k in klines if len(k) > 2]
+
+
+def lows(klines: List[List[Any]]) -> List[float]:
+    return [safe_float(k[3]) for k in klines if len(k) > 3]
+
+
+def volumes(klines: List[List[Any]]) -> List[float]:
+    # OKX candles: [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
+    return [safe_float(k[5]) for k in klines if len(k) > 5]
+
+
+def ema(values: List[float], period: int) -> List[float]:
+    vals = [safe_float(v) for v in values]
+    if not vals:
+        return []
+    if period <= 1:
+        return vals[:]
+    alpha = 2.0 / (period + 1.0)
+    out: List[float] = []
+    seed_len = min(period, len(vals))
+    seed = avg(vals[:seed_len], vals[0])
+    prev = seed
+    for i, v in enumerate(vals):
+        if i < seed_len - 1:
+            out.append(avg(vals[: i + 1], v))
+        elif i == seed_len - 1:
+            out.append(seed)
+        else:
+            prev = (v * alpha) + (prev * (1.0 - alpha))
+            out.append(prev)
+    return out
+
+
+def rsi_wilder(values: List[float], period: int = 14) -> List[float]:
+    vals = [safe_float(v) for v in values]
+    if len(vals) < 2:
+        return [50.0] * len(vals)
+    deltas = [vals[i] - vals[i - 1] for i in range(1, len(vals))]
+    gains = [max(d, 0.0) for d in deltas]
+    losses = [abs(min(d, 0.0)) for d in deltas]
+
+    out = [50.0] * len(vals)
+    if len(deltas) < period:
+        return out
+
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    rs = avg_gain / avg_loss if avg_loss != 0 else 999.0
+    out[period] = 100.0 - (100.0 / (1.0 + rs))
+
+    for i in range(period + 1, len(vals)):
+        gain = gains[i - 1]
+        loss = losses[i - 1]
+        avg_gain = ((avg_gain * (period - 1)) + gain) / period
+        avg_loss = ((avg_loss * (period - 1)) + loss) / period
+        rs = avg_gain / avg_loss if avg_loss != 0 else 999.0
+        out[i] = 100.0 - (100.0 / (1.0 + rs))
+    return out
+
+
+def atr(klines: List[List[Any]], period: int = 14) -> List[float]:
+    if not klines:
+        return []
+    h = highs(klines)
+    l = lows(klines)
+    c = closes(klines)
+    trs: List[float] = []
+    for i in range(len(c)):
+        if i == 0:
+            trs.append(max(h[i] - l[i], 0.0))
+        else:
+            trs.append(max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1])))
+    if len(trs) < period:
+        return [avg(trs)] * len(trs)
+    out: List[float] = []
+    prev = avg(trs[:period])
+    for i, tr in enumerate(trs):
+        if i < period - 1:
+            out.append(avg(trs[: i + 1]))
+        elif i == period - 1:
+            out.append(prev)
+        else:
+            prev = ((prev * (period - 1)) + tr) / period
+            out.append(prev)
+    return out
+
+
+def json_dumps_compact(obj: Any) -> str:
+    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+
+
+def extract_json_object(text: str) -> Optional[Dict[str, Any]]:
+    if not text:
+        return None
+    cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", text.strip(), flags=re.I)
+    try:
+        obj = json.loads(cleaned)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        pass
+
+    # Dengeli süslü parantez arama
+    start = cleaned.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(cleaned)):
+        ch = cleaned[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        obj = json.loads(cleaned[start : i + 1])
+                        return obj if isinstance(obj, dict) else None
+                    except Exception:
+                        return None
+    return None
+
+
+# ============================================================
+# HTTP / RATE LIMIT / CACHE
+# ============================================================
+
+class SimpleTTLCache:
+    def __init__(self, max_size: int = 800):
+        self.max_size = max_size
+        self._data: Dict[str, Tuple[Any, float, int]] = {}
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key: str) -> Optional[Any]:
+        item = self._data.get(key)
+        if not item:
+            self.misses += 1
+            return None
+        value, ts, ttl = item
+        if now_ts() - ts > ttl:
+            self._data.pop(key, None)
+            self.misses += 1
+            return None
+        self.hits += 1
+        return value
+
+    def set(self, key: str, value: Any, ttl: int = 60) -> None:
+        if len(self._data) >= self.max_size:
+            oldest = sorted(self._data.items(), key=lambda kv: kv[1][1])
+            for k, _ in oldest[: max(1, int(self.max_size * 0.20))]:
+                self._data.pop(k, None)
+        self._data[key] = (value, now_ts(), ttl)
+
+    def clear(self) -> None:
+        self._data.clear()
+        self.hits = 0
+        self.misses = 0
+
+    def stats(self) -> Dict[str, Any]:
+        total = self.hits + self.misses
+        return {
+            "size": len(self._data),
+            "max_size": self.max_size,
+            "hits": self.hits,
+            "misses": self.misses,
+            "hit_rate": round((self.hits / total * 100) if total else 0.0, 2),
+        }
+
+
+class MinuteRateLimiter:
+    def __init__(self, max_per_minute: int):
+        self.max_per_minute = max_per_minute
+        self.window_start = now_ts()
+        self.count = 0
+
+    def allow(self) -> bool:
+        t = now_ts()
+        if t - self.window_start >= 60:
+            self.window_start = t
+            self.count = 0
+        if self.count >= self.max_per_minute:
+            return False
+        self.count += 1
+        return True
+
+
+class HTTPClient:
+    def __init__(self):
+        self.session: Optional[aiohttp.ClientSession] = None
+        self.cache = SimpleTTLCache(max_size=1200)
+
+    async def ensure(self) -> None:
+        if self.session is None or self.session.closed:
+            timeout = aiohttp.ClientTimeout(total=12)
+            self.session = aiohttp.ClientSession(timeout=timeout)
+
+    async def close(self) -> None:
+        if self.session and not self.session.closed:
+            await self.session.close()
+
+    async def get_json(self, url: str, params: Optional[Dict[str, Any]] = None, ttl: int = 8) -> Dict[str, Any]:
+        await self.ensure()
+        params = params or {}
+        key = "GET:" + url + ":" + json_dumps_compact(params)
+        cached = self.cache.get(key)
+        if cached is not None:
+            return cached
+
+        try:
+            async with self.session.get(url, params=params) as resp:
+                text = await resp.text()
+                if resp.status != 200:
+                    return {"_ok": False, "_status": resp.status, "_error": text[:300]}
+                data = json.loads(text)
+                if isinstance(data, dict):
+                    data["_ok"] = True
+                self.cache.set(key, data, ttl)
+                return data
+        except Exception as e:
+            return {"_ok": False, "_error": str(e)[:220]}
+
+    async def post_json(
+        self,
+        url: str,
+        payload: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None,
+        ttl: int = 0,
+        timeout_sec: float = 10.0,
+    ) -> Dict[str, Any]:
+        await self.ensure()
+        headers = headers or {}
+        key = "POST:" + url + ":" + hashlib.sha256(json_dumps_compact(payload).encode()).hexdigest()
+        if ttl > 0:
+            cached = self.cache.get(key)
+            if cached is not None:
+                return cached
+
+        try:
+            timeout = aiohttp.ClientTimeout(total=timeout_sec)
+            async with self.session.post(url, json=payload, headers=headers, timeout=timeout) as resp:
+                text = await resp.text()
+                if resp.status != 200:
+                    return {"_ok": False, "_status": resp.status, "_error": text[:500]}
+                data = json.loads(text)
+                if isinstance(data, dict):
+                    data["_ok"] = True
+                if ttl > 0:
+                    self.cache.set(key, data, ttl)
+                return data
+        except asyncio.TimeoutError:
+            return {"_ok": False, "_error": "timeout"}
+        except Exception as e:
+            return {"_ok": False, "_error": str(e)[:220]}
+
+
+# ============================================================
+# OKX VERİ MOTORU
+# ============================================================
+
+class OKXResearchData:
+    def __init__(self, http: HTTPClient):
+        self.http = http
+
+    async def ticker(self, inst_id: str) -> Dict[str, Any]:
+        url = f"{OKX_BASE_URL}/api/v5/market/ticker"
+        data = await self.http.get_json(url, {"instId": inst_id}, ttl=4)
+        rows = data.get("data") or []
+        return rows[0] if rows else {}
+
+    async def candles(self, inst_id: str, bar: str = "1m", limit: int = 120) -> List[List[Any]]:
+        url = f"{OKX_BASE_URL}/api/v5/market/candles"
+        data = await self.http.get_json(url, {"instId": inst_id, "bar": bar, "limit": str(limit)}, ttl=8)
+        rows = data.get("data") or []
+        # OKX yeni mumları önce döndürür, eski -> yeni sıraya çeviriyoruz
+        rows = list(reversed(rows))
+        return rows
+
+    async def orderbook(self, inst_id: str, sz: int = 50) -> Dict[str, Any]:
+        url = f"{OKX_BASE_URL}/api/v5/market/books"
+        data = await self.http.get_json(url, {"instId": inst_id, "sz": str(sz)}, ttl=3)
+        rows = data.get("data") or []
+        if not rows:
+            return {}
+        book = rows[0]
+        bids = book.get("bids") or []
+        asks = book.get("asks") or []
+        bid_total = sum(safe_float(x[1]) * safe_float(x[0]) for x in bids)
+        ask_total = sum(safe_float(x[1]) * safe_float(x[0]) for x in asks)
+        bid_near = sum(safe_float(x[1]) * safe_float(x[0]) for x in bids[:10])
+        ask_near = sum(safe_float(x[1]) * safe_float(x[0]) for x in asks[:10])
+        best_bid = safe_float(bids[0][0]) if bids else 0
+        best_ask = safe_float(asks[0][0]) if asks else 0
+        mid = (best_bid + best_ask) / 2 if best_bid and best_ask else 0
+        spread_pct = pct_change(best_bid, best_ask) if best_bid else 0
+        pressure = (ask_near - bid_near) / max(ask_near + bid_near, 1)
+        return {
+            "raw": book,
+            "bids": bids,
+            "asks": asks,
+            "best_bid": best_bid,
+            "best_ask": best_ask,
+            "mid": mid,
+            "spread_pct": spread_pct,
+            "bid_total": bid_total,
+            "ask_total": ask_total,
+            "bid_near": bid_near,
+            "ask_near": ask_near,
+            "book_pressure": pressure,
+        }
+
+    async def trades(self, inst_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        url = f"{OKX_BASE_URL}/api/v5/market/trades"
+        data = await self.http.get_json(url, {"instId": inst_id, "limit": str(limit)}, ttl=3)
+        rows = data.get("data") or []
+        out = []
+        for r in rows:
+            px = safe_float(r.get("px"))
+            sz = safe_float(r.get("sz"))
+            side = str(r.get("side") or "").lower()
+            out.append({
+                "px": px,
+                "sz": sz,
+                "side": side,
+                "notional": px * sz,
+                "ts": safe_float(r.get("ts")),
+            })
+        return out
+
+    async def funding_rate(self, inst_id: str) -> Dict[str, Any]:
+        url = f"{OKX_BASE_URL}/api/v5/public/funding-rate"
+        data = await self.http.get_json(url, {"instId": inst_id}, ttl=60)
+        rows = data.get("data") or []
+        return rows[0] if rows else {}
+
+    async def open_interest(self, inst_id: str) -> Dict[str, Any]:
+        url = f"{OKX_BASE_URL}/api/v5/public/open-interest"
+        data = await self.http.get_json(url, {"instType": "SWAP", "instId": inst_id}, ttl=20)
+        rows = data.get("data") or []
+        return rows[0] if rows else {}
+
+    async def collect_market_pack(self, inst_id: str) -> Dict[str, Any]:
+        inst_id = normalize_symbol(inst_id)
+        tasks = {
+            "ticker": self.ticker(inst_id),
+            "k1": self.candles(inst_id, "1m", 180),
+            "k5": self.candles(inst_id, "5m", 160),
+            "k15": self.candles(inst_id, "15m", 160),
+            "k1h": self.candles(inst_id, "1H", 120),
+            "k4h": self.candles(inst_id, "4H", 80),
+            "book": self.orderbook(inst_id, 50),
+            "trades": self.trades(inst_id, 120),
+            "funding": self.funding_rate(inst_id),
+            "oi": self.open_interest(inst_id),
+        }
+        results: Dict[str, Any] = {}
+        for name, coro in tasks.items():
+            try:
+                results[name] = await asyncio.wait_for(coro, timeout=5.5)
+            except Exception as e:
+                results[name] = {} if name not in ("k1", "k5", "k15", "k1h", "k4h", "trades") else []
+                logger.warning("OKX veri hatası %s %s: %s", inst_id, name, str(e)[:100])
+        results["symbol"] = inst_id
+        return results
+
+
+# ============================================================
+# OPSİYONEL HABER / DIŞ ARAŞTIRMA
+# ============================================================
+
+class ExternalResearchEngine:
+    def __init__(self, http: HTTPClient):
+        self.http = http
+
+    async def cryptopanic(self, coin: str) -> List[Dict[str, Any]]:
+        if not CRYPTOPANIC_API_KEY:
+            return []
+        url = "https://cryptopanic.com/api/developer/v2/posts/"
+        params = {
+            "auth_token": CRYPTOPANIC_API_KEY,
+            "currencies": coin,
+            "public": "true",
+        }
+        data = await self.http.get_json(url, params, ttl=180)
+        rows = data.get("results") or []
+        out = []
+        for r in rows[:10]:
+            out.append({
+                "source": "cryptopanic",
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "published_at": r.get("published_at", ""),
+                "kind": r.get("kind", ""),
+                "votes": r.get("votes", {}),
+            })
+        return out
+
+    async def google_news_rss(self, coin: str, max_items: int = 8) -> List[Dict[str, Any]]:
+        """
+        Google News RSS: ücretsiz, API key istemez.
+        Komutla araştırmada ve istenirse otomatik sinyalde haber başlığı toplar.
+        """
+        if not GOOGLE_NEWS_RSS_ENABLED:
+            return []
+
+        query = f"{coin} crypto OR {coin} cryptocurrency"
+        url = "https://news.google.com/rss/search"
+        params = {
+            "q": query,
+            "hl": "tr",
+            "gl": "TR",
+            "ceid": "TR:tr",
+        }
+
+        await self.http.ensure()
+        try:
+            async with self.http.session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=PRO_AI_SIGNAL_NEWS_TIMEOUT_SEC)) as resp:
+                if resp.status != 200:
+                    return []
+                xml = await resp.text()
+        except Exception:
+            return []
+
+        items: List[Dict[str, Any]] = []
+        blocks = re.findall(r"<item>(.*?)</item>", xml, flags=re.S | re.I)
+        for block in blocks[:max_items]:
+            title_m = re.search(r"<title>(.*?)</title>", block, flags=re.S | re.I)
+            link_m = re.search(r"<link>(.*?)</link>", block, flags=re.S | re.I)
+            date_m = re.search(r"<pubDate>(.*?)</pubDate>", block, flags=re.S | re.I)
+            source_m = re.search(r"<source[^>]*>(.*?)</source>", block, flags=re.S | re.I)
+
+            title = html.unescape(re.sub(r"<.*?>", "", title_m.group(1))).strip() if title_m else ""
+            link = html.unescape(link_m.group(1)).strip() if link_m else ""
+            pub_date = html.unescape(date_m.group(1)).strip() if date_m else ""
+            source = html.unescape(re.sub(r"<.*?>", "", source_m.group(1))).strip() if source_m else "Google News RSS"
+
+            if not title:
+                continue
+
+            items.append({
+                "source": f"google_news_rss:{source}",
+                "title": title,
+                "url": link,
+                "published_at": pub_date,
+                "snippet": "",
+            })
+
+        return items
+
+    async def serpapi_news(self, coin: str) -> List[Dict[str, Any]]:
+        if not SERPAPI_API_KEY:
+            return []
+        q = f"{coin} crypto news price analysis"
+        url = "https://serpapi.com/search.json"
+        params = {
+            "engine": "google_news",
+            "q": q,
+            "api_key": SERPAPI_API_KEY,
+            "hl": "en",
+            "gl": "us",
+        }
+        data = await self.http.get_json(url, params, ttl=240)
+        rows = data.get("news_results") or []
+        out = []
+        for r in rows[:10]:
+            out.append({
+                "source": "serpapi_google_news",
+                "title": r.get("title", ""),
+                "url": r.get("link", ""),
+                "published_at": r.get("date", ""),
+                "snippet": r.get("snippet", ""),
+            })
+        return out
+
+    async def newsapi(self, coin: str) -> List[Dict[str, Any]]:
+        if not NEWSAPI_KEY:
+            return []
+        url = "https://newsapi.org/v2/everything"
+        params = {
+            "q": f"{coin} crypto OR {coin} cryptocurrency",
+            "language": "en",
+            "sortBy": "publishedAt",
+            "pageSize": "10",
+            "apiKey": NEWSAPI_KEY,
+        }
+        data = await self.http.get_json(url, params, ttl=240)
+        rows = data.get("articles") or []
+        out = []
+        for r in rows[:10]:
+            out.append({
+                "source": "newsapi",
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "published_at": r.get("publishedAt", ""),
+                "snippet": r.get("description", ""),
+            })
+        return out
+
+    async def collect(self, symbol: str, max_items: int = 15) -> Dict[str, Any]:
+        coin = base_coin(symbol)
+        tasks = [
+            self.google_news_rss(coin, max_items=max(3, min(PRO_AI_SIGNAL_NEWS_MAX_ITEMS if max_items <= 3 else max_items, 10))),
+            self.cryptopanic(coin),
+            self.serpapi_news(coin),
+            self.newsapi(coin),
+        ]
+        results: List[Dict[str, Any]] = []
+        for coro in tasks:
+            try:
+                rows = await asyncio.wait_for(coro, timeout=PRO_AI_SIGNAL_NEWS_TIMEOUT_SEC if max_items <= 3 else 4.5)
+                if rows:
+                    results.extend(rows)
+            except Exception:
+                pass
+
+        # başlık dedupe
+        seen = set()
+        unique = []
+        for x in results:
+            title = (x.get("title") or "").strip()
+            if not title:
+                continue
+            key = title.lower()[:120]
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(x)
+
+        return {
+            "coin": coin,
+            "enabled_sources": {
+                "google_news_rss": bool(GOOGLE_NEWS_RSS_ENABLED),
+                "cryptopanic": bool(CRYPTOPANIC_API_KEY),
+                "serpapi": bool(SERPAPI_API_KEY),
+                "newsapi": bool(NEWSAPI_KEY),
+            },
+            "items": unique[:max_items],
+        }
+
+
+# ============================================================
+# PİYASA ÖZET / SKOR MOTORLARI
+# ============================================================
+
+@dataclass
+class TechnicalSnapshot:
+    symbol: str
+    price: float
+    change_10m: float
+    change_20m: float
+    change_1h: float
+    change_4h: float
+    rsi_1m: float
+    rsi_5m: float
+    rsi_15m: float
+    ema_state_1m: str
+    ema_state_5m: str
+    ema_state_15m: str
+    market_structure: str
+    pump_context: float
+    near_peak_pct: float
+    drop_from_peak_pct: float
+    atr_pct_1m: float
+    volume_1m_mult: float
+    volume_5m_mult: float
+
+
+@dataclass
+class FlowSnapshot:
+    book_pressure: float
+    spread_pct: float
+    bid_near: float
+    ask_near: float
+    buy_notional: float
+    sell_notional: float
+    sell_buy_ratio: float
+    buy_sell_ratio: float
+    large_buy_count: int
+    large_sell_count: int
+    flow_direction: str
+
+
+@dataclass
+class DerivativesSnapshot:
+    funding_rate: float
+    funding_time: str
+    open_interest: float
+    oi_currency: str
+    oi_available: bool
+    funding_available: bool
+
+
+def tf_summary_from_klines(symbol: str, market_pack: Dict[str, Any]) -> TechnicalSnapshot:
+    k1 = market_pack.get("k1") or []
+    k5 = market_pack.get("k5") or []
+    k15 = market_pack.get("k15") or []
+    k1h = market_pack.get("k1h") or []
+    k4h = market_pack.get("k4h") or []
+    ticker = market_pack.get("ticker") or {}
+
+    c1 = closes(k1)
+    c5 = closes(k5)
+    c15 = closes(k15)
+    c1h = closes(k1h)
+    c4h = closes(k4h)
+
+    price = safe_float(ticker.get("last")) or (c1[-1] if c1 else 0.0)
+
+    r1 = rsi_wilder(c1)[-1] if c1 else 50.0
+    r5 = rsi_wilder(c5)[-1] if c5 else 50.0
+    r15 = rsi_wilder(c15)[-1] if c15 else 50.0
+
+    def ema_state(c: List[float]) -> str:
+        if len(c) < 30:
+            return "YETERSIZ"
+        e9 = ema(c, 9)[-1]
+        e21 = ema(c, 21)[-1]
+        e50 = ema(c, 50)[-1] if len(c) >= 50 else e21
+        last = c[-1]
+        if last > e9 > e21 > e50:
+            return "GÜÇLÜ_YUKARI"
+        if last < e9 < e21 < e50:
+            return "GÜÇLÜ_AŞAĞI"
+        if last > e21:
+            return "YUKARI_EĞİLİM"
+        if last < e21:
+            return "AŞAĞI_EĞİLİM"
+        return "RANGE"
+
+    ema1 = ema_state(c1)
+    ema5 = ema_state(c5)
+    ema15 = ema_state(c15)
+
+    # Basit structure: son swing yüksek/düşük
+    structure = "RANGE"
+    if len(c15) >= 40:
+        recent_high = max(c15[-20:])
+        prev_high = max(c15[-40:-20])
+        recent_low = min(c15[-20:])
+        prev_low = min(c15[-40:-20])
+        if recent_high > prev_high and recent_low > prev_low:
+            structure = "BULLISH"
+        elif recent_high < prev_high and recent_low < prev_low:
+            structure = "BEARISH"
+
+    ch10 = pct_change(c1[-10], c1[-1]) if len(c1) >= 10 else 0
+    ch20 = pct_change(c1[-20], c1[-1]) if len(c1) >= 20 else 0
+    ch1h = pct_change(c1[-60], c1[-1]) if len(c1) >= 60 else (pct_change(c5[-12], c5[-1]) if len(c5) >= 12 else 0)
+    ch4h = pct_change(c15[-16], c15[-1]) if len(c15) >= 16 else 0
+
+    h1 = highs(k1)
+    recent_peak = max(h1[-90:]) if len(h1) >= 20 else (max(h1) if h1 else price)
+    drop_from_peak = pct_change(recent_peak, price) * -1 if recent_peak else 0
+    near_peak_pct = abs(pct_change(recent_peak, price)) if recent_peak else 0
+
+    a1 = atr(k1, 14)
+    atr_pct = (a1[-1] / price * 100) if a1 and price else 0
+
+    v1 = volumes(k1)
+    v5 = volumes(k5)
+    vol1_mult = (v1[-1] / max(avg(v1[-30:-1]), 1e-9)) if len(v1) >= 31 else 1.0
+    vol5_mult = (v5[-1] / max(avg(v5[-30:-1]), 1e-9)) if len(v5) >= 31 else 1.0
+
+    pump_context = max(ch10, ch20, ch1h, ch4h, 0)
+
+    return TechnicalSnapshot(
+        symbol=symbol,
+        price=price,
+        change_10m=round(ch10, 3),
+        change_20m=round(ch20, 3),
+        change_1h=round(ch1h, 3),
+        change_4h=round(ch4h, 3),
+        rsi_1m=round(r1, 2),
+        rsi_5m=round(r5, 2),
+        rsi_15m=round(r15, 2),
+        ema_state_1m=ema1,
+        ema_state_5m=ema5,
+        ema_state_15m=ema15,
+        market_structure=structure,
+        pump_context=round(pump_context, 3),
+        near_peak_pct=round(near_peak_pct, 3),
+        drop_from_peak_pct=round(drop_from_peak, 3),
+        atr_pct_1m=round(atr_pct, 3),
+        volume_1m_mult=round(vol1_mult, 3),
+        volume_5m_mult=round(vol5_mult, 3),
+    )
+
+
+def flow_snapshot(market_pack: Dict[str, Any]) -> FlowSnapshot:
+    book = market_pack.get("book") or {}
+    trades = market_pack.get("trades") or []
+
+    buy_notional = 0.0
+    sell_notional = 0.0
+    large_buy = 0
+    large_sell = 0
+
+    for t in trades:
+        side = str(t.get("side") or "").lower()
+        n = safe_float(t.get("notional"))
+        if side == "buy":
+            buy_notional += n
+            if n >= 25_000:
+                large_buy += 1
+        elif side == "sell":
+            sell_notional += n
+            if n >= 25_000:
+                large_sell += 1
+
+    sell_buy = sell_notional / max(buy_notional, 1.0)
+    buy_sell = buy_notional / max(sell_notional, 1.0)
+
+    pressure = safe_float(book.get("book_pressure"))
+    if sell_buy > 1.35 and pressure >= -0.15:
+        direction = "SATIŞ_BASKIN"
+    elif buy_sell > 1.35 and pressure <= 0.15:
+        direction = "ALIŞ_BASKIN"
+    else:
+        direction = "DENGELİ"
+
+    return FlowSnapshot(
+        book_pressure=round(pressure, 4),
+        spread_pct=round(safe_float(book.get("spread_pct")), 4),
+        bid_near=round(safe_float(book.get("bid_near")), 2),
+        ask_near=round(safe_float(book.get("ask_near")), 2),
+        buy_notional=round(buy_notional, 2),
+        sell_notional=round(sell_notional, 2),
+        sell_buy_ratio=round(sell_buy, 3),
+        buy_sell_ratio=round(buy_sell, 3),
+        large_buy_count=large_buy,
+        large_sell_count=large_sell,
+        flow_direction=direction,
+    )
+
+
+def derivatives_snapshot(market_pack: Dict[str, Any]) -> DerivativesSnapshot:
+    funding = market_pack.get("funding") or {}
+    oi = market_pack.get("oi") or {}
+
+    fr = safe_float(funding.get("fundingRate")) * 100.0 if funding else 0.0
+    oi_val = safe_float(oi.get("oi"))
+    oi_ccy = str(oi.get("oiCcy") or "")
+
+    return DerivativesSnapshot(
+        funding_rate=round(fr, 5),
+        funding_time=str(funding.get("fundingTime") or ""),
+        open_interest=oi_val,
+        oi_currency=oi_ccy,
+        oi_available=bool(oi),
+        funding_available=bool(funding),
+    )
+
+
+def deterministic_direction_score(tech: TechnicalSnapshot, flow: FlowSnapshot, der: DerivativesSnapshot) -> Dict[str, Any]:
+    """
+    LLM'den önce kaba yön skoru. Amaç: AI'a sağlam, sayısal omurga vermek.
+    """
+    long_score = 0.0
+    short_score = 0.0
+    notes: List[str] = []
+
+    # EMA / trend
+    for state, weight in [
+        (tech.ema_state_1m, 7),
+        (tech.ema_state_5m, 10),
+        (tech.ema_state_15m, 12),
+    ]:
+        if "GÜÇLÜ_YUKARI" in state:
+            long_score += weight
+        elif "GÜÇLÜ_AŞAĞI" in state:
+            short_score += weight
+        elif "YUKARI" in state:
+            long_score += weight * 0.55
+        elif "AŞAĞI" in state:
+            short_score += weight * 0.55
+
+    if tech.market_structure == "BULLISH":
+        long_score += 14
+        notes.append("15m yapı bullish")
+    elif tech.market_structure == "BEARISH":
+        short_score += 14
+        notes.append("15m yapı bearish")
+
+    # Pump tepe short context
+    if tech.pump_context >= 1.2 and tech.near_peak_pct <= 0.90:
+        short_score += 14
+        notes.append("pump sonrası tepeye yakın")
+    elif tech.pump_context >= 2.2 and tech.drop_from_peak_pct <= 1.6:
+        short_score += 10
+        notes.append("pump sonrası erken geri çekilme")
+
+    # RSI
+    if tech.rsi_5m >= 70 or tech.rsi_15m >= 70:
+        short_score += 8
+        notes.append("RSI aşırı ısınma")
+    if tech.rsi_5m <= 32 or tech.rsi_15m <= 32:
+        long_score += 8
+        notes.append("RSI aşırı satış")
+
+    # Flow
+    if flow.flow_direction == "SATIŞ_BASKIN":
+        short_score += 18
+        notes.append(f"satış akışı baskın x{flow.sell_buy_ratio}")
+    elif flow.flow_direction == "ALIŞ_BASKIN":
+        long_score += 18
+        notes.append(f"alış akışı baskın x{flow.buy_sell_ratio}")
+
+    if flow.large_sell_count > flow.large_buy_count:
+        short_score += min(8, (flow.large_sell_count - flow.large_buy_count) * 2)
+    elif flow.large_buy_count > flow.large_sell_count:
+        long_score += min(8, (flow.large_buy_count - flow.large_sell_count) * 2)
+
+    # Funding
+    if der.funding_available:
+        if der.funding_rate >= 0.05:
+            short_score += 5
+            notes.append("pozitif/aşırı funding short lehine")
+        elif der.funding_rate <= -0.05:
+            long_score += 5
+            notes.append("negatif funding long lehine")
+
+    # Hacim
+    if tech.volume_1m_mult >= 1.4 or tech.volume_5m_mult >= 1.25:
+        if flow.flow_direction == "SATIŞ_BASKIN":
+            short_score += 6
+        elif flow.flow_direction == "ALIŞ_BASKIN":
+            long_score += 6
+
+    # Yatay / gecikme riskleri
+    risk_flags = []
+    if tech.pump_context < 0.35 and max(abs(tech.change_20m), abs(tech.change_1h)) < 0.5:
+        risk_flags.append("hareket zayıf/yatay")
+    if tech.atr_pct_1m <= 0.08:
+        risk_flags.append("volatilite düşük")
+    if flow.spread_pct > 0.12:
+        risk_flags.append("spread geniş")
+    if tech.drop_from_peak_pct > 2.2 and flow.flow_direction != "SATIŞ_BASKIN":
+        risk_flags.append("düşüş kaçmış/geç kalma riski")
+
+    direction = "RANGE"
+    raw_edge = abs(long_score - short_score)
+    if short_score >= long_score + 8:
+        direction = "AŞAĞI"
+    elif long_score >= short_score + 8:
+        direction = "YUKARI"
+
+    return {
+        "long_score": round(long_score, 2),
+        "short_score": round(short_score, 2),
+        "edge": round(raw_edge, 2),
+        "direction": direction,
+        "notes": notes[:8],
+        "risk_flags": risk_flags,
+    }
+
+
+def build_trade_levels(symbol: str, direction: str, price: float, tech: TechnicalSnapshot) -> Dict[str, float]:
+    """
+    Sinyal seviyeleri. Ana bot seviyeleri varsa payload'dan korunmalı.
+    Bu fonksiyon research komutları için yedek seviye üretir.
+    """
+    atr_abs = max(price * tech.atr_pct_1m / 100.0, price * 0.004)
+    if direction == "SHORT":
+        stop = price + max(atr_abs * 1.6, price * 0.0075)
+        tp1 = price * 0.990
+        tp2 = price * 0.985
+        tp3 = price * 0.980
+    elif direction == "LONG":
+        stop = price - max(atr_abs * 1.6, price * 0.0075)
+        tp1 = price * 1.010
+        tp2 = price * 1.015
+        tp3 = price * 1.020
+    else:
+        stop = tp1 = tp2 = tp3 = 0.0
+    return {
+        "entry": price,
+        "stop": stop,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+    }
+
+
+# ============================================================
+# DEEPSEEK AI MOTORU
+# ============================================================
+
+class DeepSeekResearchBrain:
+    def __init__(self, http: HTTPClient):
+        self.http = http
+        self.rate = MinuteRateLimiter(PRO_AI_MAX_CALLS_PER_MIN)
+        self.cache = SimpleTTLCache(max_size=400)
+        self.error_count = 0
+        self.circuit_until = 0.0
+
+    @property
+    def enabled(self) -> bool:
+        return bool(DEEPSEEK_API_KEY) and PRO_AI_ENABLED
+
+    async def ask_json(self, system_prompt: str, user_prompt: str, timeout_sec: float = PRO_AI_TIMEOUT_SEC) -> Dict[str, Any]:
+        if not self.enabled:
+            return {"success": False, "parsed": None, "content": "", "error": "AI kapalı veya API key yok"}
+
+        if now_ts() < self.circuit_until:
+            return {"success": False, "parsed": None, "content": "", "error": "AI devre kesici aktif"}
+
+        if not self.rate.allow():
+            return {"success": False, "parsed": None, "content": "", "error": "AI rate limit"}
+
+        key = hashlib.sha256((system_prompt + "\n" + user_prompt).encode("utf-8")).hexdigest()
+        cached = self.cache.get(key)
+        if cached:
+            return cached
+
+        url = f"{DEEPSEEK_BASE_URL}/chat/completions"
+        payload = {
+            "model": DEEPSEEK_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": 0.18,
+            "max_tokens": 900,
+            "top_p": 0.82,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {
+            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        data = await self.http.post_json(url, payload, headers=headers, ttl=0, timeout_sec=timeout_sec)
+        if not data.get("_ok"):
+            self.error_count += 1
+            if self.error_count >= 5:
+                self.circuit_until = now_ts() + 90
+            return {"success": False, "parsed": None, "content": "", "error": data.get("_error", "API hata")}
+
+        try:
+            content = data["choices"][0]["message"]["content"].strip()
+        except Exception:
+            return {"success": False, "parsed": None, "content": "", "error": "AI cevap formatı bozuk"}
+
+        parsed = extract_json_object(content)
+        if not parsed:
+            return {"success": False, "parsed": None, "content": content, "error": "JSON parse edilemedi"}
+
+        self.error_count = 0
+        result = {"success": True, "parsed": parsed, "content": content, "error": ""}
+        self.cache.set(key, result, PRO_AI_CACHE_TTL_SEC)
+        return result
+
+
+PRO_SYSTEM_PROMPT = """
+Sen profesyonel bir kripto piyasa araştırma ve yön tahmin motorusun.
+Görevin: eldeki canlı piyasa verisi, order flow, türev verisi, haber/sosyal araştırma ve teknik yapıyı birlikte yorumlayıp coin'in kısa vadede YUKARI mı AŞAĞI mı gitme ihtimali daha yüksek söylemektir.
+
+Kesin kurallar:
+- Dışarıya BEKLE, SHORT_ONAY, SHORT_RED, GEC_KALDIN, AI_YOK gibi karar etiketleri üretme.
+- JSON dışında cevap yazma.
+- Sinyal üretilecekse sadece action alanında LONG_AL veya SHORT_AL kullan.
+- Sinyal net değilse action NO_SIGNAL olsun, ama bunu kullanıcı mesajına basmayacağız.
+- Uydurma haber yazma. Haber yoksa "haber_yok" de.
+- Sadece RSI/EMA ezberi yapma. Likidite, pump/tepe, satış-alış akışı, trend devamı, geç kalma ve stop avı riskini önemse.
+- Düşüş kaçmışsa SHORT_AL verme.
+- Yükseliş hâlâ güçlü ve satış devralması yoksa SHORT_AL verme.
+- Düşüş yapısı hâlâ güçlü ve alıcı devralması yoksa LONG_AL verme.
+- Confidence 0-100 arası gerçekçi olmalı.
+- signal_score 0-100 arası olmalı.
+- risk 0-100 arası olmalı, yüksek riskte sinyal verme.
+- Sinyal varsa kısa ve net sebep yaz.
+- Stop/TP seviyeleri sayısal olmalı, ama verilen seviyeler mantıksızsa düzeltme öner.
+JSON şeması:
+{
+  "action": "LONG_AL|SHORT_AL|NO_SIGNAL",
+  "direction": "YUKARI|AŞAĞI|RANGE",
+  "confidence": 0-100,
+  "signal_score": 0-100,
+  "risk": 0-100,
+  "market_regime": "PUMP_DEVAM|TEPE_DAGITIM|DUSUS_DEVAM|DIP_TOPLAMA|RANGE|KARISIK",
+  "research_summary": "kısa araştırma özeti",
+  "main_reasons": ["neden1","neden2","neden3"],
+  "danger_flags": ["risk1","risk2"],
+  "entry_comment": "giriş alınabilir mi kısa yorum",
+  "invalidation": "bu fikir hangi durumda bozulur",
+  "news_effect": "POZITIF|NEGATIF|NOTR|HABER_YOK",
+  "final_note": "kısa Türkçe not"
+}
+"""
+
+
+def build_ai_user_prompt(
+    symbol: str,
+    tech: TechnicalSnapshot,
+    flow: FlowSnapshot,
+    der: DerivativesSnapshot,
+    deterministic: Dict[str, Any],
+    external: Dict[str, Any],
+    existing_payload: Optional[Dict[str, Any]] = None,
+) -> str:
+    payload_text = ""
+    if existing_payload:
+        # Ana botun kararını da ver, ama AI kör onaylamasın.
+        safe_payload = {
+            "stage": existing_payload.get("stage"),
+            "signal_label": existing_payload.get("signal_label"),
+            "side": existing_payload.get("side") or existing_payload.get("direction"),
+            "score": existing_payload.get("score"),
+            "quality": existing_payload.get("quality") or existing_payload.get("quality_score"),
+            "entry": existing_payload.get("entry") or existing_payload.get("price"),
+            "stop": existing_payload.get("stop"),
+            "tp1": existing_payload.get("tp1"),
+            "tp2": existing_payload.get("tp2"),
+            "tp3": existing_payload.get("tp3"),
+            "reason": str(existing_payload.get("reason", ""))[:600],
+        }
+        payload_text = json_dumps_compact(safe_payload)
+
+    news_items = external.get("items") or []
+    compact_news = []
+    for item in news_items[:8]:
+        compact_news.append({
+            "source": item.get("source"),
+            "title": item.get("title"),
+            "published_at": item.get("published_at"),
+            "snippet": (item.get("snippet") or "")[:180],
+        })
+
+    return f"""
+Coin: {symbol}
+Türkiye saati: {tr_now_str()}
+
+ANA BOT PAYLOAD:
+{payload_text or "yok / research modu"}
+
+TEKNİK SNAPSHOT:
+{json_dumps_compact(asdict(tech))}
+
+ORDER FLOW SNAPSHOT:
+{json_dumps_compact(asdict(flow))}
+
+OI/FUNDING SNAPSHOT:
+{json_dumps_compact(asdict(der))}
+
+SAYISAL YÖN SKORU:
+{json_dumps_compact(deterministic)}
+
+DIŞ ARAŞTIRMA / HABER:
+Kaynaklar: {json_dumps_compact(external.get("enabled_sources", {}))}
+Başlıklar: {json_dumps_compact(compact_news) if compact_news else "haber_yok"}
+
+Senden istenen:
+Bu coin kısa vadede düşecek mi çıkacak mı? Eğer gerçekten işlem kalitesi varsa LONG_AL veya SHORT_AL ver.
+Emin değilsen NO_SIGNAL ver. Ama kullanıcıya NO_SIGNAL yazdırılmayacak, sadece içeride kalacak.
+"""
+
+
+# ============================================================
+# ANA PROFESYONEL AI SINIFI
+# ============================================================
+
+class ProfessionalCryptoAI:
+    def __init__(self):
+        self.http = HTTPClient()
+        self.okx = OKXResearchData(self.http)
+        self.external = ExternalResearchEngine(self.http)
+        self.brain = DeepSeekResearchBrain(self.http)
+        self.history = deque(maxlen=800)
+        self.stats = {
+            "research_count": 0,
+            "long_al": 0,
+            "short_al": 0,
+            "silent": 0,
+            "ai_error": 0,
+            "last_error": "",
+        }
+
+    async def close(self) -> None:
+        await self.http.close()
+
+    async def deep_research(
+        self,
+        symbol: str,
+        existing_payload: Optional[Dict[str, Any]] = None,
+        k1: Optional[List[List[Any]]] = None,
+        k5: Optional[List[List[Any]]] = None,
+        k15: Optional[List[List[Any]]] = None,
+        k1h: Optional[List[List[Any]]] = None,
+        k4h: Optional[List[List[Any]]] = None,
+        orderbook: Optional[Dict[str, Any]] = None,
+        trades: Optional[List[Dict[str, Any]]] = None,
+        include_external: bool = True,
+    ) -> Dict[str, Any]:
+        symbol = normalize_symbol(symbol)
+
+        # Dışarıdan veri gelmediyse OKX'ten toplar.
+        market_pack: Dict[str, Any]
+        if any([k1, k5, k15, k1h, k4h, orderbook, trades]):
+            market_pack = {
+                "symbol": symbol,
+                "k1": k1 or [],
+                "k5": k5 or [],
+                "k15": k15 or [],
+                "k1h": k1h or [],
+                "k4h": k4h or [],
+                "book": orderbook or {},
+                "trades": trades or [],
+                "ticker": {"last": (existing_payload or {}).get("price") or (existing_payload or {}).get("entry") or 0},
+                "funding": {},
+                "oi": {},
+            }
+            # Eksik temel veri varsa tamamla
+            if not market_pack["k1"] or not market_pack["k5"] or not market_pack["k15"]:
+                fetched = await self.okx.collect_market_pack(symbol)
+                for key, val in fetched.items():
+                    if not market_pack.get(key):
+                        market_pack[key] = val
+        else:
+            market_pack = await self.okx.collect_market_pack(symbol)
+
+        # Funding/OI dışarıdan payload ile gelmediyse OKX pack'te var.
+        try:
+            tech = tf_summary_from_klines(symbol, market_pack)
+            flow = flow_snapshot(market_pack)
+            der = derivatives_snapshot(market_pack)
+            deterministic = deterministic_direction_score(tech, flow, der)
+        except Exception as e:
+            self.stats["ai_error"] += 1
+            self.stats["last_error"] = f"snapshot hata: {str(e)[:120]}"
+            return self._safe_no_signal(symbol, f"snapshot hata: {e}")
+
+        external = {"items": [], "enabled_sources": {}}
+        if include_external:
+            try:
+                max_news_items = PRO_AI_SIGNAL_NEWS_MAX_ITEMS if existing_payload else 15
+                timeout_news = PRO_AI_SIGNAL_NEWS_TIMEOUT_SEC if existing_payload else 5.0
+                external = await asyncio.wait_for(self.external.collect(symbol, max_items=max_news_items), timeout=timeout_news)
+            except Exception as e:
+                external = {"items": [], "enabled_sources": {}, "error": str(e)[:120]}
+
+        prompt = build_ai_user_prompt(symbol, tech, flow, der, deterministic, external, existing_payload)
+
+        ai_result = await self.brain.ask_json(PRO_SYSTEM_PROMPT, prompt, timeout_sec=PRO_AI_TIMEOUT_SEC)
+        if not ai_result.get("success"):
+            self.stats["ai_error"] += 1
+            self.stats["last_error"] = ai_result.get("error", "")
+            if PRO_AI_FAIL_OPEN and existing_payload:
+                # Fail-open açıksa ana bot sinyalini bozmaz, ama AI onayı saymaz.
+                return {
+                    "symbol": symbol,
+                    "action": self._action_from_payload(existing_payload),
+                    "direction": self._direction_from_payload(existing_payload),
+                    "confidence": 0,
+                    "signal_score": safe_float(existing_payload.get("score"), 0),
+                    "risk": 50,
+                    "market_regime": "AI_HATA_ANA_SINYAL_KORUNDU",
+                    "research_summary": "AI çalışmadı, ana bot sinyali korundu.",
+                    "main_reasons": deterministic.get("notes", [])[:3],
+                    "danger_flags": deterministic.get("risk_flags", []),
+                    "entry_comment": "Ana bot seviyesi korunur.",
+                    "invalidation": "",
+                    "news_effect": "HABER_YOK",
+                    "final_note": "",
+                    "send_signal": True,
+                    "tech": asdict(tech),
+                    "flow": asdict(flow),
+                    "derivatives": asdict(der),
+                    "deterministic": deterministic,
+                    "external_count": len(external.get("items") or []),
+                    "ai_error": ai_result.get("error", ""),
+                }
+            return self._safe_no_signal(symbol, ai_result.get("error", "AI hata"), tech, flow, der, deterministic, external)
+
+        verdict = self._sanitize_ai_verdict(symbol, ai_result.get("parsed") or {}, tech, flow, der, deterministic, external)
+        self.stats["research_count"] += 1
+        self.history.append({
+            "ts": now_ts(),
+            "symbol": symbol,
+            "action": verdict.get("action"),
+            "direction": verdict.get("direction"),
+            "confidence": verdict.get("confidence"),
+            "score": verdict.get("signal_score"),
+            "risk": verdict.get("risk"),
+        })
+
+        return verdict
+
+    def _safe_no_signal(
+        self,
+        symbol: str,
+        reason: str,
+        tech: Optional[TechnicalSnapshot] = None,
+        flow: Optional[FlowSnapshot] = None,
+        der: Optional[DerivativesSnapshot] = None,
+        deterministic: Optional[Dict[str, Any]] = None,
+        external: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        self.stats["silent"] += 1
+        return {
+            "symbol": normalize_symbol(symbol),
+            "action": "NO_SIGNAL",
+            "direction": "RANGE",
+            "confidence": 0,
+            "signal_score": 0,
+            "risk": 100,
+            "market_regime": "KARISIK",
+            "research_summary": reason[:200],
+            "main_reasons": [],
+            "danger_flags": [reason[:120]],
+            "entry_comment": "",
+            "invalidation": "",
+            "news_effect": "HABER_YOK",
+            "final_note": "",
+            "send_signal": False,
+            "tech": asdict(tech) if tech else {},
+            "flow": asdict(flow) if flow else {},
+            "derivatives": asdict(der) if der else {},
+            "deterministic": deterministic or {},
+            "external_count": len((external or {}).get("items") or []),
+        }
+
+    def _action_from_payload(self, payload: Dict[str, Any]) -> str:
+        text = " ".join(str(payload.get(k, "")) for k in ("signal_label", "side", "direction", "reason")).upper()
+        if "LONG" in text:
+            return "LONG_AL"
+        if "SHORT" in text:
+            return "SHORT_AL"
+        return "NO_SIGNAL"
+
+    def _direction_from_payload(self, payload: Dict[str, Any]) -> str:
+        action = self._action_from_payload(payload)
+        if action == "LONG_AL":
+            return "YUKARI"
+        if action == "SHORT_AL":
+            return "AŞAĞI"
+        return "RANGE"
+
+    def _sanitize_ai_verdict(
+        self,
+        symbol: str,
+        raw: Dict[str, Any],
+        tech: TechnicalSnapshot,
+        flow: FlowSnapshot,
+        der: DerivativesSnapshot,
+        deterministic: Dict[str, Any],
+        external: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        action = str(raw.get("action", "NO_SIGNAL")).upper().strip()
+        if action not in ("LONG_AL", "SHORT_AL", "NO_SIGNAL"):
+            action = "NO_SIGNAL"
+
+        direction = str(raw.get("direction", "RANGE")).upper().strip()
+        if direction not in ("YUKARI", "AŞAĞI", "RANGE"):
+            direction = "RANGE"
+
+        confidence = max(0.0, min(100.0, safe_float(raw.get("confidence"), 0)))
+        signal_score = max(0.0, min(100.0, safe_float(raw.get("signal_score"), 0)))
+        risk = max(0.0, min(100.0, safe_float(raw.get("risk"), 100)))
+        market_regime = str(raw.get("market_regime", "KARISIK")).upper().strip()[:80]
+        news_effect = str(raw.get("news_effect", "HABER_YOK")).upper().strip()[:40]
+
+        main_reasons = raw.get("main_reasons") or []
+        if not isinstance(main_reasons, list):
+            main_reasons = [str(main_reasons)]
+        main_reasons = [str(x)[:180] for x in main_reasons[:5]]
+
+        danger_flags = raw.get("danger_flags") or []
+        if not isinstance(danger_flags, list):
+            danger_flags = [str(danger_flags)]
+        danger_flags = [str(x)[:180] for x in danger_flags[:5]]
+
+        # Katı güven kapısı. Dışarıya etiket yok, sadece sinyali susturur.
+        send_signal = action in ("LONG_AL", "SHORT_AL")
+        if confidence < PRO_AI_MIN_CONFIDENCE or signal_score < PRO_AI_MIN_SIGNAL_SCORE:
+            send_signal = False
+            action = "NO_SIGNAL"
+
+        # Yön-tutarlılık kapısı
+        if action == "SHORT_AL" and direction != "AŞAĞI":
+            send_signal = False
+            action = "NO_SIGNAL"
+        if action == "LONG_AL" and direction != "YUKARI":
+            send_signal = False
+            action = "NO_SIGNAL"
+
+        # AI yön otomatik sinyal köprüsü.
+        # Model "NO_SIGNAL" dese bile yön/edge/akış/risk güçlü ise bunu otomatik AL mesajına bağlar.
+        # Bu köprü AAVE gibi "aşağı eğilim var ama ana bot sinyal üretmedi" boşluğunu kapatmak için eklendi.
+        if PRO_AI_DIRECTION_AUTO_SIGNAL_ENABLED and action == "NO_SIGNAL" and direction in ("AŞAĞI", "YUKARI"):
+            det_long = safe_float(deterministic.get("long_score"), 0)
+            det_short = safe_float(deterministic.get("short_score"), 0)
+            edge = safe_float(deterministic.get("edge"), abs(det_long - det_short))
+
+            conf_need = PRO_AI_DIRECTION_MIN_CONFIDENCE
+            score_need = PRO_AI_DIRECTION_MIN_SIGNAL_SCORE
+            if (direction == "AŞAĞI" and news_effect == "NEGATIF") or (direction == "YUKARI" and news_effect == "POZITIF"):
+                conf_need = max(50.0, conf_need - 4.0)
+                score_need = max(45.0, score_need - 4.0)
+            if (direction == "AŞAĞI" and "DUSUS" in market_regime) or (direction == "YUKARI" and "PUMP" in market_regime):
+                conf_need = max(50.0, conf_need - 2.0)
+                score_need = max(45.0, score_need - 2.0)
+
+            base_ok = (
+                confidence >= conf_need
+                and signal_score >= score_need
+                and risk <= PRO_AI_DIRECTION_MAX_RISK
+                and edge >= PRO_AI_DIRECTION_MIN_EDGE
+            )
+            short_context_ok = (
+                direction == "AŞAĞI"
+                and det_short >= det_long + PRO_AI_DIRECTION_MIN_EDGE
+                and flow.flow_direction == "SATIŞ_BASKIN"
+                and flow.sell_buy_ratio >= PRO_AI_DIRECTION_MIN_FLOW_RATIO
+                and tech.ema_state_1m not in ("GÜÇLÜ_YUKARI", "YUKARI_EĞİLİM")
+                and tech.ema_state_5m not in ("GÜÇLÜ_YUKARI",)
+                and tech.drop_from_peak_pct <= PRO_AI_DIRECTION_MAX_SHORT_DROP_FROM_PEAK_PCT
+            )
+            long_context_ok = (
+                direction == "YUKARI"
+                and det_long >= det_short + PRO_AI_DIRECTION_MIN_EDGE
+                and flow.flow_direction == "ALIŞ_BASKIN"
+                and flow.buy_sell_ratio >= PRO_AI_DIRECTION_MIN_FLOW_RATIO
+                and tech.ema_state_1m not in ("GÜÇLÜ_AŞAĞI", "AŞAĞI_EĞİLİM")
+                and tech.ema_state_5m not in ("GÜÇLÜ_AŞAĞI",)
+            )
+
+            if base_ok and short_context_ok:
+                action = "SHORT_AL"
+                send_signal = True
+                main_reasons.insert(0, f"AI yön otomatik sinyale bağlandı: aşağı edge {edge:.1f}, satış akışı x{flow.sell_buy_ratio:.2f}")
+            elif base_ok and long_context_ok:
+                action = "LONG_AL"
+                send_signal = True
+                main_reasons.insert(0, f"AI yön otomatik sinyale bağlandı: yukarı edge {edge:.1f}, alış akışı x{flow.buy_sell_ratio:.2f}")
+
+        # Basit güvenlik kapıları: AI çok güzel konuşsa da bariz çelişkileri engelle.
+        if action == "SHORT_AL":
+            if flow.flow_direction == "ALIŞ_BASKIN" and flow.buy_sell_ratio >= 1.8 and tech.ema_state_5m in ("GÜÇLÜ_YUKARI", "YUKARI_EĞİLİM"):
+                send_signal = False
+                action = "NO_SIGNAL"
+                danger_flags.append("Alıcı akışı ve 5m trend short aleyhine güçlü.")
+            if tech.drop_from_peak_pct > 2.5 and flow.flow_direction != "SATIŞ_BASKIN":
+                send_signal = False
+                action = "NO_SIGNAL"
+                danger_flags.append("Düşüş kaçmış, short geç kalma riski yüksek.")
+
+        if action == "LONG_AL":
+            if flow.flow_direction == "SATIŞ_BASKIN" and flow.sell_buy_ratio >= 1.8 and tech.ema_state_5m in ("GÜÇLÜ_AŞAĞI", "AŞAĞI_EĞİLİM"):
+                send_signal = False
+                action = "NO_SIGNAL"
+                danger_flags.append("Satıcı akışı ve 5m trend long aleyhine güçlü.")
+
+        if not send_signal:
+            self.stats["silent"] += 1
+        elif action == "LONG_AL":
+            self.stats["long_al"] += 1
+        elif action == "SHORT_AL":
+            self.stats["short_al"] += 1
+
+        direction_for_levels = "SHORT" if action == "SHORT_AL" else "LONG" if action == "LONG_AL" else "NONE"
+        levels = build_trade_levels(symbol, direction_for_levels, tech.price, tech)
+
+        return {
+            "symbol": symbol,
+            "action": action,
+            "direction": direction,
+            "confidence": round(confidence, 1),
+            "signal_score": round(signal_score, 1),
+            "risk": round(risk, 1),
+            "market_regime": market_regime,
+            "research_summary": str(raw.get("research_summary", ""))[:500],
+            "main_reasons": main_reasons,
+            "danger_flags": danger_flags,
+            "entry_comment": str(raw.get("entry_comment", ""))[:300],
+            "invalidation": str(raw.get("invalidation", ""))[:300],
+            "news_effect": news_effect,
+            "final_note": str(raw.get("final_note", ""))[:300],
+            "send_signal": bool(send_signal),
+            "levels": levels,
+            "tech": asdict(tech),
+            "flow": asdict(flow),
+            "derivatives": asdict(der),
+            "deterministic": deterministic,
+            "external_count": len(external.get("items") or []),
+        }
+
+
+# ============================================================
+# SİNYAL MESAJI / RAPOR FORMATLARI
+# ============================================================
+
+def build_ai_signal_message(verdict: Dict[str, Any]) -> str:
+    """
+    Sadece gerçek AL varsa mesaj üretir.
+    NO_SIGNAL durumunda boş string döner.
+    """
+    if not verdict or not verdict.get("send_signal"):
+        return ""
+
+    action = verdict.get("action")
+    if action not in ("LONG_AL", "SHORT_AL"):
+        return ""
+
+    symbol = verdict.get("symbol", "?")
+    levels = verdict.get("levels") or {}
+    tech = verdict.get("tech") or {}
+    flow = verdict.get("flow") or {}
+
+    side = "LONG AL" if action == "LONG_AL" else "SHORT AL"
+    emoji = "🟢" if action == "LONG_AL" else "🔴"
+
+    reasons = verdict.get("main_reasons") or []
+    reason_text = "\n".join(f"• {r}" for r in reasons[:3]) if reasons else "• Piyasa yapısı ve akış uygun."
+
+    msg = f"{emoji} {side}\n"
+    msg += f"⏰ Saat: {tr_now_str()}\n"
+    msg += f"🎯 Coin: {symbol}\n"
+    msg += f"📊 Güven: %{verdict.get('confidence', 0)} | Skor: {verdict.get('signal_score', 0)} | Risk: %{verdict.get('risk', 0)}\n"
+    msg += f"🧭 Yön: {verdict.get('direction', '?')} | Rejim: {verdict.get('market_regime', '-')}\n"
+    msg += f"💰 Giriş: {fmt_num(levels.get('entry', tech.get('price', 0)))}\n"
+    msg += f"🛑 Stop: {fmt_num(levels.get('stop', 0))}\n"
+    msg += f"🎯 TP1: {fmt_num(levels.get('tp1', 0))} | TP2: {fmt_num(levels.get('tp2', 0))} | TP3: {fmt_num(levels.get('tp3', 0))}\n"
+    msg += f"📈 Pump 20m/1s: %{tech.get('change_20m', 0)} / %{tech.get('change_1h', 0)}\n"
+    msg += f"📉 RSI 1/5/15: {tech.get('rsi_1m', 0)} / {tech.get('rsi_5m', 0)} / {tech.get('rsi_15m', 0)}\n"
+    msg += f"🧲 Akış: {flow.get('flow_direction', '-')} | Sell/Buy: x{flow.get('sell_buy_ratio', 0)} | Buy/Sell: x{flow.get('buy_sell_ratio', 0)}\n"
+    msg += f"\n🧠 Sebep:\n{reason_text}\n"
+
+    if verdict.get("entry_comment"):
+        msg += f"\n📝 Not: {verdict.get('entry_comment')}\n"
+    if verdict.get("invalidation"):
+        msg += f"⚠️ Bozulma: {verdict.get('invalidation')}\n"
+
+    return msg.strip()
+
+
+def build_research_report(verdict: Dict[str, Any]) -> str:
+    """
+    Komutla çağrıldığında yön araştırma raporu.
+    Bu otomatik sinyal değildir; kullanıcı istediğinde analiz verir.
+    """
+    if not verdict:
+        return "Araştırma sonucu alınamadı."
+
+    symbol = verdict.get("symbol", "?")
+    tech = verdict.get("tech") or {}
+    flow = verdict.get("flow") or {}
+    der = verdict.get("derivatives") or {}
+    det = verdict.get("deterministic") or {}
+    action = verdict.get("action")
+
+    if action == "LONG_AL":
+        sonuc = "YUKARI ihtimali daha güçlü; LONG AL kalitesi var."
+    elif action == "SHORT_AL":
+        sonuc = "AŞAĞI ihtimali daha güçlü; SHORT AL kalitesi var."
+    else:
+        direction = verdict.get("direction", "RANGE")
+        if direction == "YUKARI":
+            sonuc = "Yukarı eğilim var ama AL kalitesi yeterince net değil."
+        elif direction == "AŞAĞI":
+            sonuc = "Aşağı eğilim var ama AL kalitesi yeterince net değil."
+        else:
+            sonuc = "Net yön yok; piyasa karışık/range."
+
+    reasons = "\n".join(f"• {x}" for x in (verdict.get("main_reasons") or [])[:5]) or "• Net güçlü sebep yok."
+    risks = "\n".join(f"• {x}" for x in (verdict.get("danger_flags") or [])[:5]) or "• Ek risk işareti yok."
+
+    msg = f"🧠 PROFESYONEL KRİPTO AI ARAŞTIRMA\n"
+    msg += f"⏰ {tr_now_str()}\n"
+    msg += f"🎯 Coin: {symbol}\n\n"
+    msg += f"📌 Sonuç: {sonuc}\n"
+    msg += f"📊 Güven: %{verdict.get('confidence', 0)} | Sinyal Skoru: {verdict.get('signal_score', 0)} | Risk: %{verdict.get('risk', 0)}\n"
+    msg += f"🧭 Yön: {verdict.get('direction', '?')} | Rejim: {verdict.get('market_regime', '-')}\n\n"
+    msg += f"💰 Fiyat: {fmt_num(tech.get('price', 0))}\n"
+    msg += f"📈 10m/20m/1s/4s: %{tech.get('change_10m', 0)} / %{tech.get('change_20m', 0)} / %{tech.get('change_1h', 0)} / %{tech.get('change_4h', 0)}\n"
+    msg += f"📉 RSI 1/5/15: {tech.get('rsi_1m', 0)} / {tech.get('rsi_5m', 0)} / {tech.get('rsi_15m', 0)}\n"
+    msg += f"🧱 EMA 1m/5m/15m: {tech.get('ema_state_1m', '-')} / {tech.get('ema_state_5m', '-')} / {tech.get('ema_state_15m', '-')}\n"
+    msg += f"🧲 Akış: {flow.get('flow_direction', '-')} | Sell/Buy x{flow.get('sell_buy_ratio', 0)} | Buy/Sell x{flow.get('buy_sell_ratio', 0)}\n"
+    msg += f"💸 Funding: %{der.get('funding_rate', 0)} | OI: {fmt_num(der.get('open_interest', 0))} {der.get('oi_currency', '')}\n"
+    msg += f"⚖️ Sayısal skor Long/Short: {det.get('long_score', 0)} / {det.get('short_score', 0)} | Edge: {det.get('edge', 0)}\n"
+    msg += f"📰 Haber kaynak sonucu: {verdict.get('news_effect', 'HABER_YOK')} | Başlık sayısı: {verdict.get('external_count', 0)}\n\n"
+    msg += f"✅ Ana Nedenler:\n{reasons}\n\n"
+    msg += f"⚠️ Riskler:\n{risks}\n\n"
+    msg += f"📝 Özet: {verdict.get('research_summary', '-')}\n"
+    if verdict.get("final_note"):
+        msg += f"\nNot: {verdict.get('final_note')}"
+    return msg[:3900]
+
+
+# ============================================================
+# MEVCUT BOTA ENTEGRASYON FONKSİYONLARI
+# ============================================================
+
+async def init_professional_crypto_ai() -> None:
+    global professional_ai
+    if professional_ai is None:
+        professional_ai = ProfessionalCryptoAI()
+        logger.info("🧠 Profesyonel Kripto AI başlatıldı. DeepSeek=%s", bool(DEEPSEEK_API_KEY))
+
+
+async def shutdown_professional_crypto_ai() -> None:
+    global professional_ai
+    if professional_ai is not None:
+        await professional_ai.close()
+        professional_ai = None
+        logger.info("🧠 Profesyonel Kripto AI kapatıldı.")
+
+
+async def run_professional_ai_research(symbol: str, include_external: bool = True) -> Dict[str, Any]:
+    if professional_ai is None:
+        await init_professional_crypto_ai()
+    assert professional_ai is not None
+    include_external = bool(include_external and PRO_AI_EXTERNAL_RESEARCH_ON_COMMAND)
+    return await professional_ai.deep_research(symbol, include_external=include_external)
+
+
+async def run_professional_ai_on_payload(
+    final_payload: Dict[str, Any],
+    k1: Optional[List[List[Any]]] = None,
+    k5: Optional[List[List[Any]]] = None,
+    k15: Optional[List[List[Any]]] = None,
+    k1h: Optional[List[List[Any]]] = None,
+    k4h: Optional[List[List[Any]]] = None,
+    orderbook: Optional[Dict[str, Any]] = None,
+    trades: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Mevcut botun SIGNAL payload'ı üzerine derin AI araştırması uygular.
+    Uygun değilse send_signal=False yapar; dışarıya red/bekle etiketi yazdırmaz.
+    Uygunsa payload sinyal olarak kalır.
+    """
+    if not PRO_AI_ENABLED:
+        return final_payload
+
+    if professional_ai is None:
+        await init_professional_crypto_ai()
+    assert professional_ai is not None
+
+    symbol = normalize_symbol(str(final_payload.get("symbol") or final_payload.get("coin") or ""))
+    if not symbol:
+        final_payload["send_signal"] = False
+        return final_payload
+
+    verdict = await professional_ai.deep_research(
+        symbol=symbol,
+        existing_payload=final_payload,
+        k1=k1,
+        k5=k5,
+        k15=k15,
+        k1h=k1h,
+        k4h=k4h,
+        orderbook=orderbook,
+        trades=trades,
+        include_external=PRO_AI_EXTERNAL_RESEARCH_ON_SIGNAL,
+    )
+
+    final_payload["professional_ai"] = verdict
+
+    if not verdict.get("send_signal"):
+        final_payload["send_signal"] = False
+        # Dışarı görünmeyen sebep. Mesaja basma.
+        final_payload["_internal_ai_silent_reason"] = verdict.get("research_summary", "")
+        return final_payload
+
+    # AI uygunsa ana bot sinyali korunur; sadece istenirse seviyeler eksikse tamamlanır.
+    final_payload["send_signal"] = True
+    levels = verdict.get("levels") or {}
+    for k in ("entry", "stop", "tp1", "tp2", "tp3"):
+        if final_payload.get(k) in (None, "", 0, "0") and levels.get(k):
+            final_payload[k] = levels[k]
+
+    return final_payload
+
+
+# ============================================================
+# TELEGRAM KOMUTLARI
+# ============================================================
+
+async def cmd_zeka(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not TELEGRAM_AVAILABLE:
+        return
+    if not context.args:
+        await update.message.reply_text("Kullanım: /zeka BTC")
+        return
+
+    symbol = normalize_symbol(context.args[0])
+    await update.message.reply_text(f"🧠 {symbol} derin araştırma yapılıyor...")
+
+    try:
+        verdict = await run_professional_ai_research(symbol, include_external=True)
+        msg = build_research_report(verdict)
+        await update.message.reply_text(msg)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Araştırma hatası: {str(e)[:180]}")
+
+
+async def cmd_arastir(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await cmd_zeka(update, context)
+
+
+async def cmd_yon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not TELEGRAM_AVAILABLE:
+        return
+    if not context.args:
+        await update.message.reply_text("Kullanım: /yon BTC")
+        return
+
+    symbol = normalize_symbol(context.args[0])
+    try:
+        verdict = await run_professional_ai_research(symbol, include_external=False)
+        report = build_research_report(verdict)
+        await update.message.reply_text(report)
+    except Exception as e:
+        await update.message.reply_text(f"❌ Yön analizi hatası: {str(e)[:180]}")
+
+
+async def cmd_ai_durum(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not TELEGRAM_AVAILABLE:
+        return
+    if professional_ai is None:
+        await init_professional_crypto_ai()
+    assert professional_ai is not None
+
+    s = professional_ai.stats
+    cache_http = professional_ai.http.cache.stats()
+    cache_ai = professional_ai.brain.cache.stats()
+
+    msg = "🧠 PROFESYONEL KRİPTO AI DURUM\n"
+    msg += f"API: {'✅ Aktif' if DEEPSEEK_API_KEY else '❌ Key yok'}\n"
+    msg += f"Model: {DEEPSEEK_MODEL}\n"
+    msg += f"Araştırma: {s.get('research_count', 0)}\n"
+    msg += f"LONG AL: {s.get('long_al', 0)} | SHORT AL: {s.get('short_al', 0)}\n"
+    msg += f"Sessiz geçen: {s.get('silent', 0)} | AI hata: {s.get('ai_error', 0)}\n"
+    msg += f"HTTP Cache: {cache_http.get('size')}/{cache_http.get('max_size')} | Hit %{cache_http.get('hit_rate')}\n"
+    msg += f"AI Cache: {cache_ai.get('size')}/{cache_ai.get('max_size')} | Hit %{cache_ai.get('hit_rate')}\n"
+    if s.get("last_error"):
+        msg += f"Son hata: {s.get('last_error')[:160]}\n"
+    await update.message.reply_text(msg)
+
+
+def add_professional_ai_handlers(application: Any) -> None:
+    if not TELEGRAM_AVAILABLE or CommandHandler is None:
+        logger.warning("Telegram handler eklenemedi: python-telegram-bot yok.")
+        return
+    application.add_handler(CommandHandler("zeka", cmd_zeka))
+    application.add_handler(CommandHandler("arastir", cmd_arastir))
+    application.add_handler(CommandHandler("yon", cmd_yon))
+    application.add_handler(CommandHandler("ai_durum", cmd_ai_durum))
+
+
+# ============================================================
+# CLI TEST
+# ============================================================
+
+async def _cli_main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="Profesyonel Kripto AI araştırma testi")
+    parser.add_argument("symbol", nargs="?", default="BTC", help="BTC / ETH / SOL gibi coin")
+    parser.add_argument("--no-news", action="store_true", help="Dış haber araştırmasını kapat")
+    args = parser.parse_args()
+
+    await init_professional_crypto_ai()
+    try:
+        verdict = await run_professional_ai_research(args.symbol, include_external=not args.no_news)
+        print(build_research_report(verdict))
+        signal = build_ai_signal_message(verdict)
+        if signal:
+            print("\n--- SİNYAL MESAJI ---")
+            print(signal)
+    finally:
+        await shutdown_professional_crypto_ai()
+
+
+if __name__ == "__main__":
+    asyncio.run(_cli_main())
+
+'''
+# Dataclass kullanan gömülü modülün güvenli yüklenmesi.
+# Not: dataclasses, sınıfın __module__ değerini sys.modules içinde arar.
+# Modül sys.modules'a eklenmezse Railway/Python 3.11 ortamında:
+# "'NoneType' object has no attribute '__dict__'" hatası oluşabilir.
+import sys as _pro_ai_sys
+import types as _pro_ai_types
+_PROFESSIONAL_AI_MODULE_NAME = "_embedded_professional_crypto_ai"
+_PROFESSIONAL_AI_MODULE = _pro_ai_types.ModuleType(_PROFESSIONAL_AI_MODULE_NAME)
+_PROFESSIONAL_AI_MODULE.__file__ = "<embedded_professional_crypto_ai>"
+_PROFESSIONAL_AI_NS: Dict[str, Any] = _PROFESSIONAL_AI_MODULE.__dict__
+_PROFESSIONAL_AI_NS["__name__"] = _PROFESSIONAL_AI_MODULE_NAME
+_PROFESSIONAL_AI_NS["__file__"] = "<embedded_professional_crypto_ai>"
+_pro_ai_sys.modules[_PROFESSIONAL_AI_MODULE_NAME] = _PROFESSIONAL_AI_MODULE
+
+PROFESSIONAL_AI_AVAILABLE = False
+PROFESSIONAL_AI_LOAD_ERROR = ""
+try:
+    exec(_PROFESSIONAL_AI_CODE, _PROFESSIONAL_AI_NS)
+    PROFESSIONAL_AI_AVAILABLE = True
+    logger.info("Profesyonel Kripto AI modülü yüklendi")
+except Exception as _pro_ai_load_exc:
+    PROFESSIONAL_AI_AVAILABLE = False
+    PROFESSIONAL_AI_LOAD_ERROR = str(_pro_ai_load_exc)[:220]
+    logger.warning("Profesyonel Kripto AI yüklenemedi: %s", PROFESSIONAL_AI_LOAD_ERROR)
+
+
+def professional_ai_enabled() -> bool:
+    if not PROFESSIONAL_AI_AVAILABLE:
+        return False
+    return bool(_PROFESSIONAL_AI_NS.get("PRO_AI_ENABLED", False))
+
+
+def professional_ai_fail_open() -> bool:
+    if not PROFESSIONAL_AI_AVAILABLE:
+        return True
+    return bool(_PROFESSIONAL_AI_NS.get("PRO_AI_FAIL_OPEN", False))
+
+
+async def init_professional_crypto_ai_embedded() -> None:
+    if not PROFESSIONAL_AI_AVAILABLE:
+        logger.warning("Profesyonel AI pasif: %s", PROFESSIONAL_AI_LOAD_ERROR or "modül yok")
+        return
+    fn = _PROFESSIONAL_AI_NS.get("init_professional_crypto_ai")
+    if fn:
+        await fn()
+
+
+async def shutdown_professional_crypto_ai_embedded() -> None:
+    if not PROFESSIONAL_AI_AVAILABLE:
+        return
+    fn = _PROFESSIONAL_AI_NS.get("shutdown_professional_crypto_ai")
+    if fn:
+        await fn()
+
+
+async def run_professional_ai_on_payload_embedded(res: Dict[str, Any]) -> Dict[str, Any]:
+    if not professional_ai_enabled():
+        return res
+    fn = _PROFESSIONAL_AI_NS.get("run_professional_ai_on_payload")
+    if not fn:
+        return res
+    return await fn(res)
+
+
+def add_professional_ai_handlers_embedded(application: Any) -> None:
+    if not PROFESSIONAL_AI_AVAILABLE:
+        logger.warning("Profesyonel AI handler eklenmedi: %s", PROFESSIONAL_AI_LOAD_ERROR or "modül yok")
+        return
+    fn = _PROFESSIONAL_AI_NS.get("add_professional_ai_handlers")
+    if fn:
+        try:
+            fn(application)
+            logger.info("Profesyonel AI komutları eklendi: /zeka /arastir /yon /ai_durum")
+        except Exception as e:
+            logger.warning("Profesyonel AI handler ekleme hatası: %s", str(e)[:160])
+
+
+def professional_ai_status_line() -> str:
+    if not PROFESSIONAL_AI_AVAILABLE:
+        return "🧠 Profesyonel AI: ❌ " + (PROFESSIONAL_AI_LOAD_ERROR or "yüklenmedi")
+    key_ok = bool(_PROFESSIONAL_AI_NS.get("DEEPSEEK_API_KEY", ""))
+    enabled = bool(_PROFESSIONAL_AI_NS.get("PRO_AI_ENABLED", False))
+    return "🧠 Profesyonel AI: " + ("✅ Aktif" if enabled else "⚪ Kapalı") + " | DeepSeek: " + ("✅" if key_ok else "❌ Key yok")
+
+
+
+async def cmd_ai_durum_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Ana bot seviyesinde garanti /ai_durum cevabı.
+    Embedded AI handler eklenemese bile kullanıcı sessiz kalmasın diye burada doğrudan yanıt verir.
+    """
+    try:
+        if not PROFESSIONAL_AI_AVAILABLE:
+            await update.message.reply_text(
+                "🧠 PROFESYONEL KRİPTO AI DURUM\n"
+                f"Durum: ❌ Yüklenemedi\n"
+                f"Hata: {PROFESSIONAL_AI_LOAD_ERROR or 'Bilinmeyen yükleme hatası'}\n"
+                "Not: Bu cevap geldiyse /ai_durum komutu artık bağlı; sorun AI modülünün yüklenmesindedir."
+            )
+            return
+
+        await init_professional_crypto_ai_embedded()
+        ai_obj = _PROFESSIONAL_AI_NS.get("professional_ai")
+        api_key = _PROFESSIONAL_AI_NS.get("DEEPSEEK_API_KEY", "")
+        model = _PROFESSIONAL_AI_NS.get("DEEPSEEK_MODEL", "deepseek-chat")
+        enabled = bool(_PROFESSIONAL_AI_NS.get("PRO_AI_ENABLED", False))
+
+        msg = "🧠 PROFESYONEL KRİPTO AI DURUM\n"
+        msg += f"Modül: {'✅ Yüklü' if PROFESSIONAL_AI_AVAILABLE else '❌ Yok'}\n"
+        msg += f"AI açık: {'✅ Evet' if enabled else '⚪ Hayır'}\n"
+        msg += f"DeepSeek key: {'✅ Var' if api_key else '❌ Yok'}\n"
+        msg += f"Model: {model}\n"
+        try:
+            msg += f"Google News RSS: {'✅ Açık' if _PROFESSIONAL_AI_NS.get('GOOGLE_NEWS_RSS_ENABLED', False) else '⚪ Kapalı'}\n"
+            msg += f"Haber/Sinyal: {'✅ Açık' if _PROFESSIONAL_AI_NS.get('PRO_AI_EXTERNAL_RESEARCH_ON_SIGNAL', False) else '⚪ Kapalı'} | Haber/Komut: {'✅ Açık' if _PROFESSIONAL_AI_NS.get('PRO_AI_EXTERNAL_RESEARCH_ON_COMMAND', False) else '⚪ Kapalı'}\n"
+        except Exception:
+            pass
+
+        if ai_obj is not None:
+            s = getattr(ai_obj, 'stats', {}) or {}
+            msg += f"Araştırma: {s.get('research_count', 0)}\n"
+            msg += f"LONG AL: {s.get('long_al', 0)} | SHORT AL: {s.get('short_al', 0)}\n"
+            msg += f"Sessiz: {s.get('silent', 0)} | AI hata: {s.get('ai_error', 0)}\n"
+            last_error = s.get('last_error', '')
+            if last_error:
+                msg += f"Son hata: {str(last_error)[:160]}\n"
+            try:
+                http_cache = ai_obj.http.cache.stats()
+                ai_cache = ai_obj.brain.cache.stats()
+                msg += f"HTTP Cache: {http_cache.get('size', 0)}/{http_cache.get('max_size', 0)} | Hit %{http_cache.get('hit_rate', 0)}\n"
+                msg += f"AI Cache: {ai_cache.get('size', 0)}/{ai_cache.get('max_size', 0)} | Hit %{ai_cache.get('hit_rate', 0)}\n"
+            except Exception:
+                pass
+        else:
+            msg += "AI nesnesi: ⚠️ Başlatılamadı\n"
+
+        msg += "\nKomutlar: /zeka BTC | /arastir BTC | /yon BTC"
+        await update.message.reply_text(msg[:3900])
+    except Exception as e:
+        await update.message.reply_text(f"❌ /ai_durum hata: {str(e)[:220]}")
+
+
+async def cmd_zeka_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if not context.args:
+            await update.message.reply_text("Kullanım: /zeka BTC")
+            return
+        if not PROFESSIONAL_AI_AVAILABLE:
+            await update.message.reply_text("❌ Profesyonel AI yüklenemedi: " + (PROFESSIONAL_AI_LOAD_ERROR or "bilinmeyen hata"))
+            return
+        symbol = context.args[0].upper().strip()
+        await update.message.reply_text(f"🧠 {symbol} derin araştırma yapılıyor...")
+        await init_professional_crypto_ai_embedded()
+        research_fn = _PROFESSIONAL_AI_NS.get("run_professional_ai_research")
+        report_fn = _PROFESSIONAL_AI_NS.get("build_research_report")
+        if not research_fn or not report_fn:
+            await update.message.reply_text("❌ Profesyonel AI araştırma fonksiyonu bulunamadı.")
+            return
+        verdict = await research_fn(symbol, include_external=True)
+        msg = report_fn(verdict)
+        await update.message.reply_text(str(msg)[:3900])
+    except Exception as e:
+        await update.message.reply_text(f"❌ /zeka hata: {str(e)[:220]}")
+
+
+async def cmd_arastir_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await cmd_zeka_direct(update, context)
+
+
+async def cmd_yon_direct(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if not context.args:
+            await update.message.reply_text("Kullanım: /yon BTC")
+            return
+        if not PROFESSIONAL_AI_AVAILABLE:
+            await update.message.reply_text("❌ Profesyonel AI yüklenemedi: " + (PROFESSIONAL_AI_LOAD_ERROR or "bilinmeyen hata"))
+            return
+        symbol = context.args[0].upper().strip()
+        await update.message.reply_text(f"🧭 {symbol} yön analizi yapılıyor...")
+        await init_professional_crypto_ai_embedded()
+        research_fn = _PROFESSIONAL_AI_NS.get("run_professional_ai_research")
+        report_fn = _PROFESSIONAL_AI_NS.get("build_research_report")
+        if not research_fn or not report_fn:
+            await update.message.reply_text("❌ Profesyonel AI yön fonksiyonu bulunamadı.")
+            return
+        verdict = await research_fn(symbol, include_external=False)
+        msg = report_fn(verdict)
+        await update.message.reply_text(str(msg)[:3900])
+    except Exception as e:
+        await update.message.reply_text(f"❌ /yon hata: {str(e)[:220]}")
+
+
+def _ai_verdict_action_to_direction(action: str) -> str:
+    action = str(action or "").upper()
+    if action == "LONG_AL":
+        return "LONG"
+    if action == "SHORT_AL":
+        return "SHORT"
+    return ""
+
+
+def _calc_rr_from_levels(direction: str, entry: float, stop: float, tp1: float) -> float:
+    risk = abs(stop - entry)
+    reward = abs(entry - tp1)
+    if risk <= 0:
+        return 0.0
+    return round(reward / risk, 2)
+
+
+
+def _ai_auto_extract_numbers(payload: Dict[str, Any]) -> Dict[str, float]:
+    """
+    AI otomatik payload içinden final kapı sayıları.
+    Tek kaynak yoksa professional_ai/deterministic/tech/flow alanlarından tamamlar.
+    """
+    verdict = payload.get("professional_ai") if isinstance(payload.get("professional_ai"), dict) else {}
+    det = verdict.get("deterministic") if isinstance(verdict.get("deterministic"), dict) else {}
+    tech = verdict.get("tech") if isinstance(verdict.get("tech"), dict) else {}
+    flow = verdict.get("flow") if isinstance(verdict.get("flow"), dict) else {}
+    payload_flow = payload.get("trade_flow") if isinstance(payload.get("trade_flow"), dict) else {}
+
+    direction = str(payload.get("direction") or _ai_verdict_action_to_direction(str(verdict.get("action", ""))) or "SHORT").upper()
+
+    long_score = safe_float(det.get("long_score"), 0)
+    short_score = safe_float(det.get("short_score"), 0)
+    raw_edge = safe_float(det.get("edge"), abs(long_score - short_score))
+    edge = raw_edge
+    if direction == "LONG" and long_score > 0:
+        edge = long_score - short_score
+    elif direction == "SHORT" and short_score > 0:
+        edge = short_score - long_score
+
+    return {
+        "confidence": safe_float(payload.get("ai_confidence", verdict.get("confidence", 0)), 0),
+        "signal_score": safe_float(payload.get("ai_signal_score", verdict.get("signal_score", payload.get("breakdown_score", 0))), 0),
+        "risk": safe_float(payload.get("ai_risk", verdict.get("risk", 100)), 100),
+        "edge": safe_float(payload.get("ai_edge", edge), 0),
+        "long_score": long_score,
+        "short_score": short_score,
+        "rr": safe_float(payload.get("rr"), 0),
+        "rsi1": safe_float(payload.get("rsi1", tech.get("rsi_1m", 50)), 50),
+        "rsi5": safe_float(payload.get("rsi5", tech.get("rsi_5m", 50)), 50),
+        "rsi15": safe_float(payload.get("rsi15", tech.get("rsi_15m", 50)), 50),
+        "change_10m": safe_float(tech.get("change_10m", payload.get("pump_10m", 0)), 0),
+        "change_20m": safe_float(tech.get("change_20m", payload.get("pump_20m", 0)), 0),
+        "change_1h": safe_float(tech.get("change_1h", payload.get("pump_1h", 0)), 0),
+        "pump_context": safe_float(tech.get("pump_context", 0), 0),
+        "near_peak_pct": safe_float(tech.get("near_peak_pct", 999), 999),
+        "drop_from_peak_pct": safe_float(tech.get("drop_from_peak_pct", 999), 999),
+        "vol1": safe_float(payload.get("vol_ratio_1m", tech.get("volume_1m_mult", 0)), 0),
+        "vol5": safe_float(payload.get("vol_ratio_5m", tech.get("volume_5m_mult", 0)), 0),
+        "sell_buy": safe_float(flow.get("sell_buy_ratio", payload_flow.get("sell_to_buy", 0)), 0),
+        "buy_sell": safe_float(flow.get("buy_sell_ratio", payload_flow.get("buy_to_sell", 0)), 0),
+    }
+
+
+def validate_ai_auto_final_gate(payload: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    AI otomatik sinyalin gerçek gönderim kapısı.
+    Amaç botu susturmak değil:
+      - kötü/çok geç sinyali keser,
+      - orta sinyali iç takipte bırakır,
+      - güçlü ve doğru yerdeki sinyali geçirir.
+
+    WOO tipi: edge düşük + risk yüksek + RSI aşırı satım -> BLOK.
+    LRC tipi: düşüş bittikten sonra düşük RSI ile SHORT -> BLOK.
+    Tepe bölgesi/ilk kırılım SHORT'ları korunur.
+    """
+    if not payload.get("ai_auto_promoted"):
+        return True, "AI otomatik sinyal değil."
+
+    direction = str(payload.get("direction", "SHORT")).upper()
+    n = _ai_auto_extract_numbers(payload)
+
+    conf = n["confidence"]
+    score = n["signal_score"]
+    risk = n["risk"]
+    edge = n["edge"]
+    rr = n["rr"]
+
+    min_edge = PRO_AI_AUTOSIGNAL_LONG_MIN_EDGE if direction == "LONG" else PRO_AI_AUTOSIGNAL_SHORT_MIN_EDGE
+
+    blocks: List[str] = []
+    if conf < PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:
+        blocks.append(f"güven düşük {conf:.1f}/{PRO_AI_AUTOSIGNAL_MIN_CONFIDENCE:.1f}")
+    if score < PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:
+        blocks.append(f"skor düşük {score:.1f}/{PRO_AI_AUTOSIGNAL_MIN_SIGNAL_SCORE:.1f}")
+    if risk > PRO_AI_AUTOSIGNAL_MAX_RISK:
+        blocks.append(f"risk yüksek {risk:.1f}/{PRO_AI_AUTOSIGNAL_MAX_RISK:.1f}")
+    if edge < min_edge:
+        blocks.append(f"edge düşük {edge:.1f}/{min_edge:.1f}")
+    if rr < PRO_AI_AUTOSIGNAL_MIN_RR:
+        blocks.append(f"RR düşük {rr:.2f}/{PRO_AI_AUTOSIGNAL_MIN_RR:.2f}")
+
+    if blocks:
+        return False, "AI OTOMATİK FİNAL KAPI BLOK: " + " | ".join(blocks)
+
+    if direction == "SHORT" and PRO_AI_AUTOSIGNAL_SHORT_LATE_FILTER_ENABLED:
+        # Düşüş bittikten sonra short istemiyoruz.
+        if n["rsi1"] <= PRO_AI_AUTOSIGNAL_SHORT_RSI1_OVERSOLD_BLOCK:
+            return False, (
+                f"AI OTOMATİK GEÇ SHORT BLOK: RSI1 aşırı satım {n['rsi1']:.1f}; "
+                "düşüş bittikten sonra SHORT AL yok."
+            )
+
+        if (
+            n["rsi5"] <= PRO_AI_AUTOSIGNAL_SHORT_RSI5_WEAK_BLOCK
+            and n["rsi15"] <= PRO_AI_AUTOSIGNAL_SHORT_RSI15_WEAK_BLOCK
+            and n["change_1h"] <= 0
+        ):
+            return False, (
+                f"AI OTOMATİK GEÇ SHORT BLOK: RSI5/15 zayıf {n['rsi5']:.1f}/{n['rsi15']:.1f}, "
+                f"1s hareket {n['change_1h']:.2f}; düşüşün gövdesi geçmiş."
+            )
+
+        has_top_context = (
+            n["pump_context"] >= PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT
+            or n["change_20m"] >= PRO_AI_AUTOSIGNAL_SHORT_MIN_PUMP_CONTEXT
+            or n["rsi15"] >= 58
+            or n["near_peak_pct"] <= PRO_AI_AUTOSIGNAL_SHORT_MAX_NEAR_PEAK_PCT
+        )
+        if PRO_AI_AUTOSIGNAL_SHORT_MIN_TOP_CONTEXT and not has_top_context:
+            return False, (
+                "AI OTOMATİK GEÇ SHORT BLOK: tepe/pump bağlamı yok; "
+                f"pump_context={n['pump_context']:.2f}, 20m={n['change_20m']:.2f}, "
+                f"near_peak={n['near_peak_pct']:.2f}, RSI15={n['rsi15']:.1f}."
+            )
+
+    if direction == "LONG" and PRO_AI_AUTOSIGNAL_LONG_OVERHEAT_FILTER_ENABLED:
+        # Tepede kovalamayı keser; trend devam longları tamamen öldürmez.
+        if n["rsi1"] >= PRO_AI_AUTOSIGNAL_LONG_RSI1_OVERHEAT_BLOCK and n["rsi5"] >= PRO_AI_AUTOSIGNAL_LONG_RSI5_OVERHEAT_BLOCK:
+            return False, (
+                f"AI OTOMATİK GEÇ LONG BLOK: RSI1/5 aşırı ısınmış {n['rsi1']:.1f}/{n['rsi5']:.1f}; "
+                "tepe kovalanmaz."
+            )
+
+    return True, (
+        f"AI OTOMATİK FİNAL KAPI GEÇTİ: güven {conf:.1f}, skor {score:.1f}, "
+        f"risk {risk:.1f}, edge {edge:.1f}/{min_edge:.1f}, RR {rr:.2f}"
+    )
+
+
+
+def build_ai_auto_signal_payload(symbol: str, verdict: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """AI araştırma sonucunu normal bot sinyal payload'ına çevirir.
+    Dışarıya ayrı AI etiketi basılmaz; mesaj yine LONG AL / SHORT AL formatındadır.
+    """
+    if not verdict or not verdict.get("send_signal"):
+        return None
+
+    action = str(verdict.get("action", "")).upper()
+    direction = _ai_verdict_action_to_direction(action)
+    if direction not in ("LONG", "SHORT"):
+        return None
+
+    symbol = normalize_symbol(symbol or verdict.get("symbol", ""))
+    levels = verdict.get("levels") if isinstance(verdict.get("levels"), dict) else {}
+    tech = verdict.get("tech") if isinstance(verdict.get("tech"), dict) else {}
+    flow = verdict.get("flow") if isinstance(verdict.get("flow"), dict) else {}
+    det = verdict.get("deterministic") if isinstance(verdict.get("deterministic"), dict) else {}
+
+    entry = safe_float(levels.get("entry"), safe_float(tech.get("price"), 0))
+    stop = safe_float(levels.get("stop"), 0)
+    tp1 = safe_float(levels.get("tp1"), 0)
+    tp2 = safe_float(levels.get("tp2"), 0)
+    tp3 = safe_float(levels.get("tp3"), 0)
+    if entry <= 0 or stop <= 0 or tp1 <= 0:
+        return None
+
+    rr = _calc_rr_from_levels(direction, entry, stop, tp1)
+    confidence = safe_float(verdict.get("confidence"), 0)
+    signal_score = safe_float(verdict.get("signal_score"), 0)
+    risk = safe_float(verdict.get("risk"), 100)
+    total_score = round(max(signal_score, signal_score + confidence * 0.25 - risk * 0.10), 2)
+    quality_score = round(clamp((confidence + signal_score - risk) / 12.0, 0.0, 10.0), 2)
+
+    reasons = verdict.get("main_reasons") if isinstance(verdict.get("main_reasons"), list) else []
+    reason_text = " | ".join(str(x) for x in reasons[:6]) if reasons else str(verdict.get("research_summary", "AI otomatik sinyal"))
+    note = (
+        f"AI OTOMATİK SİNYAL: {verdict.get('direction', '-')} | "
+        f"Güven %{confidence:.1f} | Skor {signal_score:.1f} | Risk %{risk:.1f} | "
+        f"Long/Short {det.get('long_score', 0)}/{det.get('short_score', 0)} edge={det.get('edge', 0)} | "
+        f"{reason_text}"
+    )
+
+    payload = {
+        "symbol": symbol,
+        "direction": direction,
+        "stage": "SIGNAL",
+        "signal_label": "LONG AL" if direction == "LONG" else "SHORT AL",
+        "score": total_score,
+        "candidate_score": round(signal_score * 0.34, 2),
+        "ready_score": round(signal_score * 0.33, 2),
+        "verify_score": round(signal_score * 0.33, 2),
+        "price": entry,
+        "stop": stop,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3,
+        "rr": rr,
+        "pump_10m": safe_float(tech.get("change_10m"), 0),
+        "pump_20m": safe_float(tech.get("change_20m"), 0),
+        "pump_1h": safe_float(tech.get("change_1h"), 0),
+        "drop_10m": round(-safe_float(tech.get("change_10m"), 0), 3),
+        "drop_20m": round(-safe_float(tech.get("change_20m"), 0), 3),
+        "drop_1h": round(-safe_float(tech.get("change_1h"), 0), 3),
+        "rsi1": safe_float(tech.get("rsi_1m"), 0),
+        "rsi5": safe_float(tech.get("rsi_5m"), 0),
+        "rsi15": safe_float(tech.get("rsi_15m"), 0),
+        "vol_ratio_1m": safe_float(tech.get("volume_1m_mult"), 0),
+        "vol_ratio_5m": safe_float(tech.get("volume_5m_mult"), 0),
+        "quote_volume": 0,
+        "trend_guard_score": 0,
+        "breakdown_score": signal_score,
+        "green_streak": 0,
+        "red_count_5": 0,
+        "quality_score": quality_score,
+        "quality_reason": "Profesyonel AI otomatik köprü",
+        "reason": note[:1400],
+        "ict": {},
+        "long_close_gate": {},
+        "trade_flow": flow,
+        "orderbook": {},
+        "whale_eye": {"enabled": True, "total_score": 0, "whale_confidence": "AI", "reason": "Profesyonel AI otomatik sinyal köprüsü"},
+        "professional_ai": verdict,
+        "professional_ai_checked": True,
+        "ai_auto_promoted": True,
+        "ai_confidence": confidence,
+        "ai_signal_score": signal_score,
+        "ai_risk": risk,
+        "ai_edge": safe_float(det.get("edge"), abs(safe_float(det.get("long_score"), 0) - safe_float(det.get("short_score"), 0))),
+        "ai_long_score": safe_float(det.get("long_score"), 0),
+        "ai_short_score": safe_float(det.get("short_score"), 0),
+        "invisible_class": "PROFESYONEL AI",
+        "invisible_score": signal_score,
+        "invisible_decision": "AI_OTOMATIK_SIGNAL",
+    }
+
+    gate_ok, gate_reason = validate_ai_auto_final_gate(payload)
+    if not gate_ok:
+        stats["ai_auto_final_block"] = stats.get("ai_auto_final_block", 0) + 1
+        if direction == "SHORT" and "GEÇ SHORT" in gate_reason:
+            stats["ai_auto_late_short_block"] = stats.get("ai_auto_late_short_block", 0) + 1
+        if direction == "LONG" and "GEÇ LONG" in gate_reason:
+            stats["ai_auto_late_long_block"] = stats.get("ai_auto_late_long_block", 0) + 1
+        logger.info("AI otomatik final kapı blok %s %s: %s", direction, symbol, gate_reason)
+        return None
+
+    stats["ai_auto_final_pass"] = stats.get("ai_auto_final_pass", 0) + 1
+    payload["reason"] = f"{payload.get('reason', '')} | {gate_reason}"[:1400]
+    return payload
+
+
+async def maybe_build_ai_auto_signal_for_symbol(symbol: str) -> Optional[Dict[str, Any]]:
+    if not PRO_AI_AUTOSIGNAL_LOOP_ENABLED or not professional_ai_enabled():
+        return None
+    if not PROFESSIONAL_AI_AVAILABLE:
+        return None
+    symbol = normalize_symbol(symbol)
+    if is_blocked_coin_symbol(symbol) or symbol_temporarily_blocked(symbol):
+        return None
+    now_ts = time.time()
+    scan_mem = memory.setdefault("ai_auto_scan", {})
+    rec = scan_mem.get(symbol, {}) if isinstance(scan_mem.get(symbol, {}), dict) else {}
+    last_ts = safe_float(rec.get("last_ts", 0))
+    if last_ts and now_ts - last_ts < PRO_AI_AUTOSIGNAL_PER_SYMBOL_COOLDOWN_SEC:
+        return None
+    # Aynı coin için yakın zamanda AI sinyali gittiyse pahalı AI araştırmasına bile girme.
+    if ai_auto_recently_locked(symbol, "LONG") or ai_auto_recently_locked(symbol, "SHORT"):
+        return None
+
+    research_fn = _PROFESSIONAL_AI_NS.get("run_professional_ai_research")
+    if not research_fn:
+        return None
+
+    try:
+        await init_professional_crypto_ai_embedded()
+        verdict = await research_fn(symbol, include_external=PRO_AI_AUTOSIGNAL_INCLUDE_EXTERNAL)
+        action = str(verdict.get("action", "NO_SIGNAL")).upper()
+        direction = _ai_verdict_action_to_direction(action)
+        scan_mem[symbol] = {
+            "last_ts": now_ts,
+            "action": action,
+            "direction": verdict.get("direction"),
+            "confidence": verdict.get("confidence"),
+            "signal_score": verdict.get("signal_score"),
+            "risk": verdict.get("risk"),
+            "send_signal": bool(verdict.get("send_signal")),
+        }
+        if not verdict.get("send_signal"):
+            return None
+        if direction and ai_auto_recently_locked(symbol, direction):
+            stats["cooldown_reject"] = stats.get("cooldown_reject", 0) + 1
+            return None
+        payload = build_ai_auto_signal_payload(symbol, verdict)
+        if payload:
+            stats["professional_ai_auto_signal"] = stats.get("professional_ai_auto_signal", 0) + 1
+        return payload
+    except Exception as e:
+        stats["professional_ai_error"] = stats.get("professional_ai_error", 0) + 1
+        logger.warning("AI otomatik sinyal tarama hatası %s: %s", symbol, str(e)[:180])
+        return None
+
+
+async def ai_auto_signal_loop() -> None:
+    global ai_pointer
+    if not PRO_AI_AUTOSIGNAL_LOOP_ENABLED:
+        return
+    while True:
+        try:
+            if professional_ai_enabled() and COINS:
+                sent_this_cycle = 0
+                batch_size = max(1, min(PRO_AI_AUTOSIGNAL_BATCH_SIZE, len(COINS)))
+                batch: List[str] = []
+                for _ in range(batch_size):
+                    batch.append(COINS[ai_pointer % len(COINS)])
+                    ai_pointer += 1
+                for sym in batch:
+                    payload = await maybe_build_ai_auto_signal_for_symbol(sym)
+                    if payload:
+                        await maybe_send_signal(payload)
+                        sent_this_cycle += 1
+                        if sent_this_cycle >= max(1, PRO_AI_AUTOSIGNAL_MAX_SEND_PER_CYCLE):
+                            break
+        except Exception as e:
+            logger.exception("ai_auto_signal_loop hata: %s", e)
+        await asyncio.sleep(max(5.0, PRO_AI_AUTOSIGNAL_INTERVAL_SEC))
+
+
+
+
+
+# =========================================================
+# V6.1 PRO FINAL KAPILAR: SR / REJİM / MAKRO / HATA HAFIZASI
+# =========================================================
+def _cluster_levels(values: List[float], tolerance_pct: float = SR_CLUSTER_TOLERANCE_PCT) -> List[Dict[str, Any]]:
+    vals = sorted([v for v in values if v > 0])
+    clusters: List[List[float]] = []
+    for v in vals:
+        if not clusters:
+            clusters.append([v]); continue
+        ref = avg(clusters[-1])
+        if abs(pct_change(ref, v)) <= tolerance_pct:
+            clusters[-1].append(v)
+        else:
+            clusters.append([v])
+    out = []
+    for c in clusters:
+        if len(c) >= SR_MIN_TOUCHES:
+            out.append({"level": avg(c), "touches": len(c)})
+    return sorted(out, key=lambda x: x["level"])
+
+
+def build_support_resistance_context(k1: List[List[Any]], k5: List[List[Any]], entry: float, tp1: float, direction: str) -> Dict[str, Any]:
+    hs = highs(k1[-90:]) + highs(k5[-60:])
+    ls = lows(k1[-90:]) + lows(k5[-60:])
+    supports = _cluster_levels(ls)
+    resistances = _cluster_levels(hs)
+    nearest_support_below = max([x for x in supports if x["level"] < entry], key=lambda x: x["level"], default={})
+    nearest_resistance_above = min([x for x in resistances if x["level"] > entry], key=lambda x: x["level"], default={})
+    direction = (direction or "SHORT").upper()
+    block = False; reason = "SR temiz"
+    if direction == "SHORT":
+        # Entry ile TP1 arasında kuvvetli destek varsa TP1 önünde duvar vardır.
+        walls = [x for x in supports if tp1 < x["level"] < entry]
+        wall = max(walls, key=lambda x: x["touches"], default={})
+        if wall and abs(pct_change(entry, wall["level"])) <= abs(pct_change(entry, tp1)) + SR_TP1_WALL_BUFFER_PCT:
+            block = True
+            reason = f"TP1 önünde destek duvarı {fmt_num(wall['level'])} | touches={wall['touches']}"
+    else:
+        walls = [x for x in resistances if entry < x["level"] < tp1]
+        wall = max(walls, key=lambda x: x["touches"], default={})
+        if wall and abs(pct_change(entry, wall["level"])) <= abs(pct_change(entry, tp1)) + SR_TP1_WALL_BUFFER_PCT:
+            block = True
+            reason = f"TP1 önünde direnç duvarı {fmt_num(wall['level'])} | touches={wall['touches']}"
+    return {
+        "enabled": True, "block": block, "reason": reason,
+        "support": nearest_support_below.get("level", 0), "support_touches": nearest_support_below.get("touches", 0),
+        "resistance": nearest_resistance_above.get("level", 0), "resistance_touches": nearest_resistance_above.get("touches", 0),
+    }
+
+
+def detect_regime_context(k1: List[List[Any]], k5: List[List[Any]]) -> Dict[str, Any]:
+    if len(k1) < 50 or len(k5) < 50:
+        return {"regime": "UNKNOWN", "score": 0, "reason": "veri yetersiz"}
+    c1 = closes(k1); c5 = closes(k5)
+    e9 = ema(c1, 9); e21 = ema(c1, 21); e50 = ema(c5, 50)
+    r1 = rsi(c1, 14); r5 = rsi(c5, 14)
+    move20 = pct_change(c1[-21], c1[-1]) if len(c1) >= 22 else 0.0
+    score = 0.0
+    reasons = []
+    if c1[-1] > e9[-1] > e21[-1]: score += 2; reasons.append("1m EMA yukarı")
+    if c1[-1] < e9[-1] < e21[-1]: score -= 2; reasons.append("1m EMA aşağı")
+    if c5[-1] > e50[-1]: score += 1; reasons.append("5m EMA50 üstü")
+    if c5[-1] < e50[-1]: score -= 1; reasons.append("5m EMA50 altı")
+    if r1[-1] > 60 and r5[-1] > 56: score += 1; reasons.append("RSI yukarı rejim")
+    if r1[-1] < 40 and r5[-1] < 44: score -= 1; reasons.append("RSI aşağı rejim")
+    if move20 > 0.9: score += 1; reasons.append(f"20m güçlü yukarı %{move20:.2f}")
+    if move20 < -0.9: score -= 1; reasons.append(f"20m güçlü aşağı %{move20:.2f}")
+    if score >= 3:
+        reg = "UPTREND"
+    elif score <= -3:
+        reg = "DOWNTREND"
+    else:
+        reg = "RANGE"
+    return {"regime": reg, "score": round(score, 2), "reason": " | ".join(reasons[:6])}
+
+
+async def build_macro_context() -> Dict[str, Any]:
+    out = {"enabled": MACRO_FILTER_ENABLED, "btc_15m": 0.0, "btc_1h": 0.0, "eth_15m": 0.0, "bias": "NÖTR", "reason": "-"}
+    if not MACRO_FILTER_ENABLED:
+        return out
+    try:
+        btc1 = await get_klines("BTC-USDT-SWAP", "1m", 70)
+        eth1 = await get_klines("ETH-USDT-SWAP", "1m", 70)
+        if len(btc1) >= 61:
+            cb = closes(btc1); out["btc_15m"] = round(pct_change(cb[-16], cb[-1]), 2); out["btc_1h"] = round(pct_change(cb[-61], cb[-1]), 2)
+        if len(eth1) >= 16:
+            ce = closes(eth1); out["eth_15m"] = round(pct_change(ce[-16], ce[-1]), 2)
+        if out["btc_15m"] >= MACRO_BTC_STRONG_MOVE_PCT or out["eth_15m"] >= MACRO_ETH_STRONG_MOVE_PCT:
+            out["bias"] = "RISK_ON_UP"
+        elif out["btc_15m"] <= -MACRO_BTC_STRONG_MOVE_PCT or out["eth_15m"] <= -MACRO_ETH_STRONG_MOVE_PCT:
+            out["bias"] = "RISK_OFF_DOWN"
+        out["reason"] = f"BTC15={out['btc_15m']} BTC1h={out['btc_1h']} ETH15={out['eth_15m']} bias={out['bias']}"
+    except Exception as e:
+        out["reason"] = f"Makro okunamadı: {str(e)[:80]}"
+    return out
+
+
+def mistake_signature_from_payload(res: Dict[str, Any]) -> str:
+    direction = str(res.get("direction", "SHORT")).upper()
+    sym = normalize_symbol(str(res.get("symbol", "")))
+    base = coin_base_from_symbol(sym)
+    rsi1 = safe_float(res.get("rsi1", 50)); rsi5 = safe_float(res.get("rsi5", 50)); rsi15 = safe_float(res.get("rsi15", 50))
+    br = safe_float(res.get("breakdown_score", 0)); q = safe_float(res.get("quality_score", 0))
+    whale = res.get("whale_eye", {}) if isinstance(res.get("whale_eye"), dict) else {}
+    wh_conf = str(whale.get("whale_confidence", res.get("whale_confidence", "-")))
+    binance = str(res.get("binance_confirm_status", "-"))
+    def bucket(v, cuts):
+        for name, lim in cuts:
+            if v <= lim: return name
+        return "HIGH"
+    parts = [
+        direction,
+        bucket(rsi1, [("RSI1_LOW", 42), ("RSI1_MID", 58), ("RSI1_HOT", 70)]),
+        bucket(rsi5, [("RSI5_LOW", 45), ("RSI5_MID", 60), ("RSI5_HOT", 72)]),
+        bucket(rsi15, [("RSI15_LOW", 45), ("RSI15_MID", 60), ("RSI15_HOT", 72)]),
+        bucket(br, [("BR_WEAK", 5), ("BR_OK", 8), ("BR_STRONG", 12)]),
+        bucket(q, [("Q_WEAK", 5), ("Q_MID", 7), ("Q_GOOD", 9)]),
+        f"WHALE_{wh_conf}", f"BIN_{binance}",
+    ]
+    # Coin bazlı değil pattern bazlı öğrensin; fakat base de not olarak kaydedilir.
+    return "|".join(parts)
+
+
+def mistake_memory_should_block(res: Dict[str, Any]) -> Tuple[bool, str]:
+    if not MISTAKE_MEMORY_ENABLED:
+        return False, "Hata hafızası kapalı"
+    mm = memory.setdefault("mistake_memory", {})
+    patterns = mm.setdefault("patterns", {})
+    sig = mistake_signature_from_payload(res)
+    rec = patterns.get(sig, {})
+    stops = int(safe_float(rec.get("stops", 0), 0))
+    last_ts = safe_float(rec.get("last_ts", 0), 0)
+    if stops >= MISTAKE_MEMORY_MIN_STOPS and time.time() - last_ts <= MISTAKE_MEMORY_BLOCK_HOURS * 3600:
+        return True, f"HATA HAFIZASI BLOK: bu pattern son {MISTAKE_MEMORY_BLOCK_HOURS:.0f}s içinde stop oldu | {sig}"
+    return False, "Hata hafızası temiz"
+
+
+def learn_from_stopped_signal(sym: str, direction: str, rec: Dict[str, Any], result: Dict[str, Any]) -> None:
+    if not MISTAKE_MEMORY_ENABLED:
+        return
+    payload = copy.deepcopy(rec.get("signal_snapshot", {}))
+    if not payload:
+        payload = {"symbol": sym, "direction": direction, **rec}
+    sig = mistake_signature_from_payload(payload)
+    mm = memory.setdefault("mistake_memory", {})
+    patterns = mm.setdefault("patterns", {})
+    cur = patterns.setdefault(sig, {"stops": 0, "examples": []})
+    cur["stops"] = int(safe_float(cur.get("stops", 0), 0)) + 1
+    cur["last_ts"] = time.time()
+    cur["last_symbol"] = sym
+    cur["last_direction"] = direction
+    cur["last_reason"] = str(result.get("note", "STOP"))[:240]
+    examples = cur.setdefault("examples", [])
+    examples.append({"ts": time.time(), "symbol": sym, "direction": direction, "entry": rec.get("entry"), "stop": rec.get("stop"), "outcome": "STOP"})
+    cur["examples"] = examples[-8:]
+    stats["mistake_memory_learn"] = stats.get("mistake_memory_learn", 0) + 1
+
+
+def position_management_summary(klines: List[List[Any]], direction: str, entry: float, stop: float, tp1: float, tp2: float, tp3: float) -> str:
+    if not POSITION_MANAGEMENT_ENABLED or not klines or entry <= 0:
+        return "Pozisyon yönetimi kapalı/veri yok."
+    direction = (direction or "SHORT").upper()
+    hs = highs(klines); ls = lows(klines)
+    if direction == "LONG":
+        best = max(hs); worst = min(ls)
+        mfe = pct_change(entry, best); mae = pct_change(entry, worst)
+        trail = max(stop, entry * (1 + TRAILING_LOCK_PCT_AFTER_TP1 / 100.0)) if best >= tp1 and TRAILING_AFTER_TP1_ENABLED else stop
+        return f"MFE %{mfe:.2f} | MAE %{mae:.2f} | TP1 sonrası öneri trailing stop: {fmt_num(trail)}"
+    best = min(ls); worst = max(hs)
+    mfe = pct_change(entry, best) * -1; mae = pct_change(entry, worst) * -1
+    trail = min(stop, entry * (1 - TRAILING_LOCK_PCT_AFTER_TP1 / 100.0)) if best <= tp1 and TRAILING_AFTER_TP1_ENABLED else stop
+    return f"MFE %{mfe:.2f} | MAE %{mae:.2f} | TP1 sonrası öneri trailing stop: {fmt_num(trail)}"
+
+
+async def apply_professional_final_gates(res: Dict[str, Any]) -> Dict[str, Any]:
+    if not PRO_FINAL_GATES_ENABLED or res.get("stage") != "SIGNAL":
+        return res
+    p = copy.deepcopy(res)
+    sym = normalize_symbol(str(p.get("symbol", "")))
+    direction = str(p.get("direction", "SHORT")).upper()
+    whale = p.get("whale_eye", {}) if isinstance(p.get("whale_eye"), dict) else {}
+    whale_score = safe_float(whale.get("total_score", p.get("whale_score", 0)))
+    weak_whale = whale_score < PRO_GATE_WHALE_OVERRIDE_SCORE
+
+    # Hata hafızası
+    block, reason = mistake_memory_should_block(p)
+    if block:
+        p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"; p["reason"] = f"{p.get('reason','')} | {reason}"
+        stats["mistake_memory_block"] = stats.get("mistake_memory_block", 0) + 1
+        return p
+
+    try:
+        k1 = await get_klines(sym, "1m", 140)
+        k5 = await get_klines(sym, "5m", 120)
+    except Exception:
+        k1, k5 = [], []
+    if len(k1) >= 50 and len(k5) >= 40:
+        sr = build_support_resistance_context(k1, k5, safe_float(p.get("price", 0)), safe_float(p.get("tp1", 0)), direction)
+        p["sr"] = sr
+        if SR_FILTER_ENABLED and SR_HARD_BLOCK_ENABLED and sr.get("block") and (not PRO_GATE_BLOCK_ONLY_WEAK_WHALE or weak_whale):
+            p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"; p["reason"] = f"{p.get('reason','')} | SR BLOK: {sr.get('reason')}"
+            stats["sr_block"] = stats.get("sr_block", 0) + 1
+            return p
+        regime = detect_regime_context(k1, k5)
+        p["regime"] = regime
+        if REGIME_FILTER_ENABLED and weak_whale:
+            if direction == "SHORT" and regime.get("regime") == "UPTREND" and safe_float(p.get("breakdown_score", 0)) < BREAKDOWN_ASSIST_STRONG_SCORE:
+                p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"; p["reason"] = f"{p.get('reason','')} | REJİM BLOK: güçlü yukarı rejimde zayıf short | {regime.get('reason')}"
+                stats["regime_block"] = stats.get("regime_block", 0) + 1
+                return p
+            if direction == "LONG" and regime.get("regime") == "DOWNTREND" and safe_float(p.get("long_structure_score", p.get("breakdown_score", 0))) < ICT_MIN_CHOCH_SCORE:
+                p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"; p["reason"] = f"{p.get('reason','')} | REJİM BLOK: aşağı rejimde zayıf long | {regime.get('reason')}"
+                stats["regime_block"] = stats.get("regime_block", 0) + 1
+                return p
+
+    macro = await build_macro_context()
+    p["macro"] = macro
+    if MACRO_FILTER_ENABLED and weak_whale:
+        if direction == "SHORT" and macro.get("bias") == "RISK_ON_UP" and safe_float(p.get("breakdown_score", 0)) < BREAKDOWN_ASSIST_STRONG_SCORE:
+            p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"; p["reason"] = f"{p.get('reason','')} | MAKRO BLOK: BTC/ETH yukarı akarken zayıf short | {macro.get('reason')}"
+            stats["macro_block"] = stats.get("macro_block", 0) + 1
+            return p
+        if direction == "LONG" and macro.get("bias") == "RISK_OFF_DOWN":
+            p["stage"] = "READY"; p["signal_label"] = "İÇ TAKİP"; p["reason"] = f"{p.get('reason','')} | MAKRO BLOK: BTC/ETH aşağı akarken zayıf long | {macro.get('reason')}"
+            stats["macro_block"] = stats.get("macro_block", 0) + 1
+            return p
+    return p
+
+
+async def maybe_send_signal(res: Dict[str, Any]) -> None:
+    symbol = res["symbol"]
+    stage = res["stage"]
+    direction = str(res.get("direction", "SHORT")).upper()
+    expected_label = "LONG AL" if direction == "LONG" else "SHORT AL"
+
+    if stage == "SIGNAL":
+        if direction == "LONG":
+            res = enforce_single_long_al_rules(res)
+        else:
+            res = enforce_single_short_al_rules(res)
+
+        # Profesyonel Kripto AI: gerçek sinyal gönderilmeden hemen önce derin araştırma yapar.
+        # Uygun değilse dışarıya BEKLE/RED/AI_YOK gibi etiket basmadan sinyali sessizce susturur.
+        if professional_ai_enabled() and not res.get("professional_ai_checked"):
+            try:
+                res = await run_professional_ai_on_payload_embedded(res)
+                if res.get("send_signal") is False:
+                    stats["professional_ai_silent"] = stats.get("professional_ai_silent", 0) + 1
+                    logger.info("Profesyonel AI sinyali sessizce susturdu %s %s: %s", direction, symbol, res.get("_internal_ai_silent_reason", "-"))
+                    update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
+                    return
+            except Exception as e:
+                stats["professional_ai_error"] = stats.get("professional_ai_error", 0) + 1
+                logger.warning("Profesyonel AI sinyal kontrol hatası %s %s: %s", direction, symbol, str(e)[:180])
+                if not professional_ai_fail_open():
+                    update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
+                    return
+
+        if res.get("ai_auto_promoted"):
+            gate_ok, gate_reason = validate_ai_auto_final_gate(res)
+            if not gate_ok:
+                stats["ai_auto_final_block"] = stats.get("ai_auto_final_block", 0) + 1
+                if direction == "SHORT" and "GEÇ SHORT" in gate_reason:
+                    stats["ai_auto_late_short_block"] = stats.get("ai_auto_late_short_block", 0) + 1
+                if direction == "LONG" and "GEÇ LONG" in gate_reason:
+                    stats["ai_auto_late_long_block"] = stats.get("ai_auto_late_long_block", 0) + 1
+                logger.info("AI otomatik final kapı son kontrol blok %s %s: %s", direction, symbol, gate_reason)
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | {gate_reason}"})
+                return
+            res["reason"] = f"{res.get('reason', '')} | {gate_reason}"[:1400]
+
+        if res.get("stage") != "SIGNAL" or str(res.get("signal_label", "")) != expected_label:
+            logger.info("%s sinyali susturdu %s: %s", expected_label, symbol, res.get("reason", "-"))
+            update_hot_memory(copy.deepcopy(res))
+            return
+
+        logger.info("%s ÜRETİLDİ %s skor=%s", expected_label, symbol, res.get("score"))
+
+        now_attempt = time.time()
+        spacing_guard = SIGNAL_SPACING_SEC if SIGNAL_SPACING_SEC > 0 else INTERNAL_SIGNAL_SPACING_SEC
+        last_attempt = safe_float(memory.get("last_signal_attempt_ts", 0))
+        if spacing_guard > 0 and now_attempt - last_attempt < spacing_guard:
+            stats["scan_signal_suppressed"] += 1
+            logger.info("İÇ SİNYAL ARALIĞI KORUMASI %s %s", direction, symbol)
+            update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
+            return
+        memory["last_signal_attempt_ts"] = now_attempt
+
+        # V6.1 PRO: SR / rejim / makro / hata hafızası son kapı
+        res = await apply_professional_final_gates(res)
+        if res.get("stage") != "SIGNAL":
+            logger.info("V6.1 PRO final kapı sinyali takipte tuttu %s %s: %s", direction, symbol, res.get("reason", "-"))
+            update_hot_memory(copy.deepcopy(res))
+            return
+
+        if daily_trade_already_sent(symbol, direction):
+            stats["daily_short_block"] += 1
+            logger.info("GÜNLÜK %s KİLİDİ %s", direction, symbol)
+            update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
+            return
+
+        if get_today_trade_sent_count(direction) >= get_daily_trade_limit(direction):
+            stats["daily_total_block"] += 1
+            logger.info("GÜNLÜK TOPLAM %s LİMİTİ DOLDU %s", direction, symbol)
+            update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
+            return
+
+        # AI otomatik köprüden gelen sinyallerde tekrar/spam kilidi gönderimden ÖNCE atılır.
+        # Sebep: Telegram mesajı gitmiş ama API cevabı/timeout yüzünden ok=False dönebilir;
+        # bu durumda hafıza yazılmazsa aynı coin 2-3 dk içinde tekrar basar.
+        if res.get("ai_auto_promoted"):
+            if ai_auto_recently_locked(symbol, direction):
+                stats["cooldown_reject"] = stats.get("cooldown_reject", 0) + 1
+                logger.info("AI OTOMATİK TEKRAR KİLİDİ %s %s", direction, symbol)
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY"})
+                return
+            if PRO_AI_AUTOSIGNAL_PRELOCK_ENABLED:
+                mark_ai_auto_signal_lock(symbol, direction, res)
+                set_daily_trade_sent(symbol, res)
+                save_memory()
+
+        if direction == "SHORT":
+            confirm = await confirm_signal_on_binance(res)
+            res["data_engine"] = "OKX SWAP"
+            res["binance_confirm_status"] = confirm.get("status", "YOK")
+            res["binance_confirm_score"] = confirm.get("score", 0)
+            res["binance_symbol"] = confirm.get("binance_symbol", normalize_binance_symbol(symbol))
+            res["binance_price"] = confirm.get("binance_price", 0)
+            res["binance_price_gap_pct"] = confirm.get("price_gap_pct", 0)
+            res["binance_confirm_reason"] = confirm.get("reason", "-")
+
+            confirm_status = str(confirm.get("status", "YOK"))
+            if confirm_status == "PASS":
+                stats["binance_confirm_pass"] += 1
+            elif confirm_status == "SOFT_PASS":
+                stats["binance_confirm_soft"] += 1
+            elif confirm_status in ("FAIL", "HARD_FAIL"):
+                stats["binance_confirm_fail"] += 1
+                if confirm_status == "HARD_FAIL":
+                    stats["signal_downgraded_by_binance"] += 1
+                    logger.info("BINANCE TEYİDİ RED %s", symbol)
+                    downgraded = copy.deepcopy(res)
+                    downgraded["stage"] = "READY"
+                    update_hot_memory(downgraded)
+                    return
+            elif confirm_status == "UNAVAILABLE":
+                stats["binance_confirm_unavailable"] += 1
+        else:
+            res["data_engine"] = "OKX SWAP + ICT LONG"
+            res["binance_confirm_status"] = "NOT_USED"
+            res["binance_symbol"] = normalize_binance_symbol(symbol)
+            res["binance_price"] = 0
+            res["binance_price_gap_pct"] = 0
+            res["binance_confirm_reason"] = "LONG motoru ayrı teyitle çalışır"
+
+        ok = await safe_send_telegram(build_signal_message(res))
+        if ok:
+            logger.info("TELEGRAM GÖNDERİLDİ %s %s", expected_label, symbol)
+            stats["signal_sent"] += 1
+            memory["last_signal_ts"] = time.time()
+            if direction == "LONG":
+                stats["long_signal_sent"] += 1
+            set_daily_trade_sent(symbol, res)
+            if res.get("ai_auto_promoted"):
+                mark_ai_auto_signal_lock(symbol, direction, res)
+            follow_key = f"{direction}:{symbol}"
+            memory.setdefault("follows", {})[follow_key] = {
+                "created_ts": time.time(), "symbol": symbol, "direction": direction,
+                "entry": res["price"], "stop": res["stop"],
+                "tp1": res["tp1"], "tp2": res["tp2"], "tp3": res["tp3"],
+                "stage": "SIGNAL", "done": False, "sent_ts": time.time(),
+                "signal_snapshot": {
+                    "symbol": symbol, "direction": direction, "score": res.get("score"),
+                    "quality_score": res.get("quality_score"), "breakdown_score": res.get("breakdown_score"),
+                    "rsi1": res.get("rsi1"), "rsi5": res.get("rsi5"), "rsi15": res.get("rsi15"),
+                    "pump_10m": res.get("pump_10m"), "pump_20m": res.get("pump_20m"), "pump_1h": res.get("pump_1h"),
+                    "whale_eye": res.get("whale_eye", {}), "binance_confirm_status": res.get("binance_confirm_status", "-"),
+                    "sr": res.get("sr", {}), "regime": res.get("regime", {}), "macro": res.get("macro", {}),
+                    "reason": res.get("reason", ""),
+                }
+            }
+            memory.get("hot", {}).pop(symbol, None)
+            memory.get("trend_watch", {}).pop(symbol, None)
+        else:
+            logger.warning("TELEGRAM GÖNDERİLEMEDİ %s %s", expected_label, symbol)
+        return
+
+    if stage in ("READY", "HOT"):
+        update_hot_memory(res)
+        return
 
 
 def select_best_signals(signals: List[Dict[str, Any]], limit: int = MAX_SIGNAL_PER_SCAN) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     if not signals:
         return [], []
-    ordered = sorted(signals, key=signal_rank_score, reverse=True)
-    effective_limit = max(1, int(limit))
-    if not ONE_ACTIVE_TRADE_MODE and SIGNAL_SPACING_SEC <= 0:
-        effective_limit = 1
-    return ordered[:effective_limit], ordered[effective_limit:]
-
-
-async def maybe_send_signal(res: Dict[str, Any]) -> None:
-    symbol = normalize_symbol(str(res.get("symbol", "")))
-    if not symbol:
-        return
-    direction = str(res.get("direction", "SHORT")).upper()
-    expected_label = "LONG AL" if direction == "LONG" else "SHORT AL"
-
-    if res.get("stage") != "SIGNAL":
-        if res.get("stage") in ("READY", "HOT"):
-            update_hot_memory(res)
-        return
-
-    # Dışarı riskli/çelişkili etiket gitmesin.
-    res = copy.deepcopy(res)
-    res["symbol"] = symbol
-    if direction == "LONG":
-        res["signal_label"] = "LONG AL"
-        res["data_engine"] = "OKX SWAP + ICT LONG"
-        res["binance_confirm_status"] = "NOT_USED"
-        res["binance_symbol"] = normalize_binance_symbol(symbol)
-        res["binance_price"] = 0
-        res["binance_price_gap_pct"] = 0
-        res["binance_confirm_reason"] = "LONG motoru OKX/ICT/Whale Eye ile çalışır; short Binance teyidi kullanılmadı."
-    else:
-        res["signal_label"] = "SHORT AL"
-        confirm = await confirm_signal_on_binance(res)
-        res["data_engine"] = "OKX SWAP"
-        res["binance_confirm_status"] = confirm.get("status", "YOK")
-        res["binance_confirm_score"] = confirm.get("score", 0)
-        res["binance_symbol"] = confirm.get("binance_symbol", normalize_binance_symbol(symbol))
-        res["binance_price"] = confirm.get("binance_price", 0)
-        res["binance_price_gap_pct"] = confirm.get("price_gap_pct", 0)
-        res["binance_confirm_reason"] = confirm.get("reason", "-")
-
-        status = str(confirm.get("status", "YOK"))
-        if status == "PASS":
-            stats["binance_confirm_pass"] += 1
-        elif status == "SOFT_PASS":
-            stats["binance_confirm_soft"] += 1
-        elif status == "UNAVAILABLE":
-            stats["binance_confirm_unavailable"] += 1
-            if BINANCE_CONFIRM_REQUIRED:
-                update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Binance teyidi yok, takipte."})
-                return
-        elif status in ("FAIL", "HARD_FAIL"):
-            stats["binance_confirm_fail"] += 1
-            if BINANCE_CONFIRM_REQUIRED or status == "HARD_FAIL":
-                stats["signal_downgraded_by_binance"] += 1
-                update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Binance teyidi zayıf: {confirm.get('reason', '-')}"})
-                return
-
-    if daily_trade_already_sent(symbol, direction):
-        stats["daily_short_block"] += 1
-        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı coin bugün zaten {expected_label} aldı."})
-        return
-
-    if get_today_trade_sent_count(direction) >= get_daily_trade_limit(direction):
-        stats["daily_total_block"] += 1
-        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Günlük {direction} üst sınırı doldu."})
-        return
-
-    if has_active_trade():
-        stats["active_trade_block"] += 1
-        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Aktif işlem varken yeni AL basılmadı."})
-        return
-
-    if global_signal_gap_active():
-        stats["global_gap_block"] += 1
-        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı anda çoklu sinyal engeli."})
-        return
-
-    if should_block_signal(symbol, "SIGNAL", res):
-        stats["cooldown_reject"] += 1
-        update_hot_memory({**res, "stage": "READY", "reason": f"{res.get('reason', '')} | Cooldown nedeniyle sessiz takip."})
-        return
-
-    memory["last_signal_attempt_ts"] = time.time()
-    ok = await safe_send_telegram(build_signal_message(res))
-    if ok:
-        stats["signal_sent"] += 1
-        if direction == "LONG":
-            stats["long_signal_sent"] += 1
-        set_signal_memory(symbol, "SIGNAL", res)
-        memory.setdefault("follows", {})[f"{direction}:{symbol}"] = {
-            "created_ts": time.time(),
-            "sent_ts": time.time(),
-            "symbol": symbol,
-            "direction": direction,
-            "entry": res.get("price"),
-            "stop": res.get("stop"),
-            "tp1": res.get("tp1"),
-            "tp2": res.get("tp2"),
-            "tp3": res.get("tp3"),
-            "done": False,
-        }
-        memory.get("hot", {}).pop(symbol, None)
-        memory.get("trend_watch", {}).pop(symbol, None)
+    ordered = sorted(signals, key=lambda r: safe_float(r.get("score", 0)) + safe_float(r.get("whale_eye", {}).get("total_score", 0)), reverse=True)
+    keep = ordered[:max(1, limit)]
+    suppressed = ordered[max(1, limit):]
+    return keep, suppressed
 
 
 def get_hot_symbols(limit: int = MAX_HOT_CANDIDATES) -> List[str]:
+    hot = memory.get("hot", {})
+    trend_watch = memory.get("trend_watch", {})
     merged: Dict[str, Dict[str, Any]] = {}
-    for sym, rec in memory.get("hot", {}).items():
-        merged[sym] = rec if isinstance(rec, dict) else {}
-    for sym, rec in memory.get("trend_watch", {}).items():
-        if not isinstance(rec, dict):
-            continue
-        old = merged.get(sym, {})
-        if safe_float(rec.get("score", 0)) > safe_float(old.get("score", 0)):
+    for sym, rec in hot.items():
+        merged[sym] = rec
+    for sym, rec in trend_watch.items():
+        cur = merged.get(sym, {})
+        if safe_float(rec.get("score", 0)) > safe_float(cur.get("score", 0)):
             merged[sym] = rec
     items = sorted(merged.items(), key=lambda x: safe_float(x[1].get("score", 0)), reverse=True)
-    return [normalize_symbol(k) for k, _ in items if not is_blocked_coin_symbol(k)][:limit]
+    return [k for k, _ in items if not is_blocked_coin_symbol(k)][:limit]
 
 
 def pick_general_symbols(batch_size: int = MAX_DEEP_ANALYSIS_PER_CYCLE) -> List[str]:
     global deep_pointer
     if not COINS:
         return []
-    out: List[str] = []
+    out = []
     n = len(COINS)
     for _ in range(min(batch_size, n)):
-        out.append(normalize_symbol(COINS[deep_pointer % n]))
+        out.append(COINS[deep_pointer % n])
         deep_pointer += 1
     return out
 
@@ -4449,14 +6644,14 @@ async def analyze_separate_engines(symbol: str, tickers24: Dict[str, Dict[str, A
     signal_dirs = {str(r.get("direction", "SHORT")).upper() for r in results if r.get("stage") == "SIGNAL"}
     if "SHORT" in signal_dirs and "LONG" in signal_dirs:
         stats["long_conflict_block"] += 1
-        fixed: List[Dict[str, Any]] = []
+        out: List[Dict[str, Any]] = []
         for r in results:
-            rr = copy.deepcopy(r)
-            rr["stage"] = "READY"
-            rr["signal_label"] = "İÇ TAKİP"
-            rr["reason"] = f"{rr.get('reason', '')} | LONG/SHORT motorları çakıştı; dış sinyal yok."
-            fixed.append(rr)
-        return fixed
+            r = copy.deepcopy(r)
+            r["stage"] = "READY"
+            r["signal_label"] = "İÇ TAKİP"
+            r["reason"] = f"{r.get('reason', '')} | LONG/SHORT çakıştı"
+            out.append(r)
+        return out
     return results
 
 
@@ -4466,6 +6661,10 @@ async def hot_scan_loop() -> None:
             cleanup_memory()
             tickers24 = await get_24h_tickers()
             hot_syms = get_hot_symbols(MAX_HOT_CANDIDATES)
+            if not hot_syms:
+                await asyncio.sleep(HOT_SCAN_INTERVAL_SEC)
+                continue
+
             signal_candidates: List[Dict[str, Any]] = []
             for sym in hot_syms:
                 engine_results = await analyze_separate_engines(sym, tickers24)
@@ -4473,21 +6672,19 @@ async def hot_scan_loop() -> None:
                     continue
                 stats["analyzed"] += 1
                 for res in engine_results:
-                    if res.get("stage") == "SIGNAL":
+                    if res["stage"] == "SIGNAL":
                         signal_candidates.append(res)
-                    elif res.get("stage") in ("READY", "HOT"):
+                    elif res["stage"] in ("READY", "HOT"):
                         update_hot_memory(res)
-                    else:
-                        stats["rejected"] += 1
-            chosen, suppressed = select_best_signals(signal_candidates, MAX_SIGNAL_PER_SCAN)
+
+            chosen, suppressed = select_best_signals(signal_candidates)
             for res in suppressed:
                 stats["scan_signal_suppressed"] += 1
-                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı taramada daha güçlü aday seçildi."})
             for res in chosen:
                 await maybe_send_signal(res)
         except Exception as e:
             logger.exception("hot_scan_loop hata: %s", e)
-        await asyncio.sleep(max(0.5, HOT_SCAN_INTERVAL_SEC))
+        await asyncio.sleep(HOT_SCAN_INTERVAL_SEC)
 
 
 async def deep_scan_loop() -> None:
@@ -4503,21 +6700,19 @@ async def deep_scan_loop() -> None:
                     continue
                 stats["analyzed"] += 1
                 for res in engine_results:
-                    if res.get("stage") == "SIGNAL":
+                    if res["stage"] == "SIGNAL":
                         signal_candidates.append(res)
-                    elif res.get("stage") in ("READY", "HOT"):
+                    elif res["stage"] in ("HOT", "READY"):
                         update_hot_memory(res)
-                    else:
-                        stats["rejected"] += 1
-            chosen, suppressed = select_best_signals(signal_candidates, MAX_SIGNAL_PER_SCAN)
+
+            chosen, suppressed = select_best_signals(signal_candidates)
             for res in suppressed:
                 stats["scan_signal_suppressed"] += 1
-                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | Aynı taramada daha güçlü aday seçildi."})
             for res in chosen:
                 await maybe_send_signal(res)
         except Exception as e:
             logger.exception("deep_scan_loop hata: %s", e)
-        await asyncio.sleep(max(1.0, DEEP_SCAN_INTERVAL_SEC))
+        await asyncio.sleep(DEEP_SCAN_INTERVAL_SEC)
 
 
 async def heartbeat_loop() -> None:
@@ -4531,108 +6726,148 @@ async def heartbeat_loop() -> None:
         await asyncio.sleep(max(60, HEARTBEAT_INTERVAL_SEC))
 
 
-def _followup_candle_hit(direction: str, kline: List[Any], stop: float, tp1: float, tp2: float, tp3: float) -> Dict[str, Any]:
-    high = safe_float(kline[2])
-    low = safe_float(kline[3])
+
+def evaluate_tp_stop_path(
+    klines: List[List[Any]],
+    direction: str,
+    sent_ts: float,
+    entry: float,
+    stop: float,
+    tp1: float,
+    tp2: float,
+    tp3: float,
+) -> Dict[str, Any]:
+    """
+    Sinyalden sonraki 1m mumları sırayla tarar.
+    Son fiyata göre karar vermez; önce stop mu TP mi geldi onu bulur.
+    Aynı mumda hem stop hem TP görünüyorsa güvenli tarafta kalıp STOP sayar.
+    """
     direction = (direction or "SHORT").upper()
-    if direction == "LONG":
-        stop_hit = low <= stop if stop > 0 else False
-        if high >= tp3 > 0:
-            return {"stop_hit": stop_hit, "tp_level": "TP3", "tp_price": tp3}
-        if high >= tp2 > 0:
-            return {"stop_hit": stop_hit, "tp_level": "TP2", "tp_price": tp2}
-        if high >= tp1 > 0:
-            return {"stop_hit": stop_hit, "tp_level": "TP1", "tp_price": tp1}
-        return {"stop_hit": stop_hit, "tp_level": "", "tp_price": 0.0}
-    stop_hit = high >= stop if stop > 0 else False
-    if 0 < tp3 and low <= tp3:
-        return {"stop_hit": stop_hit, "tp_level": "TP3", "tp_price": tp3}
-    if 0 < tp2 and low <= tp2:
-        return {"stop_hit": stop_hit, "tp_level": "TP2", "tp_price": tp2}
-    if 0 < tp1 and low <= tp1:
-        return {"stop_hit": stop_hit, "tp_level": "TP1", "tp_price": tp1}
-    return {"stop_hit": stop_hit, "tp_level": "", "tp_price": 0.0}
+    sent_ms = int(sent_ts * 1000)
+    checked = 0
+    best_tp = "YOK"
+    best_tp_price = 0.0
 
-
-async def check_followups() -> None:
-    follows = memory.get("follows", {})
-    if not follows:
-        return
-    now_ts = time.time()
-    for key, rec in list(follows.items()):
-        if not isinstance(rec, dict) or rec.get("done"):
+    for k in klines:
+        start_ms = kline_start_ms(k)
+        close_ms = start_ms + interval_to_milliseconds("1m") if start_ms else 0
+        if close_ms and close_ms <= sent_ms:
             continue
-        sent_ts = safe_float(rec.get("sent_ts", rec.get("created_ts", 0)))
-        if now_ts - sent_ts < FOLLOWUP_DELAY_SEC:
-            continue
-        sym = normalize_symbol(str(rec.get("symbol", key.split(":")[-1])))
-        direction = str(rec.get("direction", "SHORT")).upper()
-        entry = safe_float(rec.get("entry", 0))
-        stop = safe_float(rec.get("stop", 0))
-        tp1 = safe_float(rec.get("tp1", 0))
-        tp2 = safe_float(rec.get("tp2", 0))
-        tp3 = safe_float(rec.get("tp3", 0))
-        limit = int(clamp((FOLLOWUP_DELAY_SEC / 60.0) + 80, 120, 300))
-        k1 = await get_klines(sym, "1m", limit)
-        scan = [k for k in k1 if (kline_start_ms(k) / 1000.0) + 60 >= sent_ts] if k1 else []
-        if not scan:
-            scan = k1[-min(len(k1), 120):] if k1 else []
-        last_price = safe_float(scan[-1][4]) if scan else entry
-        outcome = "NÖTR"
-        hit_time = "-"
-        hit_price = 0.0
-        detail = "Takip süresinde TP/stop görülmedi."
-        for k in scan:
-            hit = _followup_candle_hit(direction, k, stop, tp1, tp2, tp3)
-            candle_time = tr_str(kline_start_ms(k) / 1000.0) if kline_start_ms(k) else "-"
-            if hit["stop_hit"] and hit["tp_level"]:
-                outcome = "STOP"
-                hit_time = candle_time
-                hit_price = stop
-                detail = f"Aynı 1m mumda hem {hit['tp_level']} hem stop göründü; güvenli değerlendirme STOP."
-                break
-            if hit["stop_hit"]:
-                outcome = "STOP"
-                hit_time = candle_time
-                hit_price = stop
-                detail = "Stop, TP seviyelerinden önce geldi."
-                break
-            if hit["tp_level"]:
-                outcome = hit["tp_level"]
-                hit_time = candle_time
-                hit_price = safe_float(hit["tp_price"])
-                detail = f"{outcome}, stoptan önce geldi."
-                # Kullanıcı TP1'de tamamını kapatmak istese bile raporda ulaşılan en üst TP'yi gösterebilmek için
-                # aynı takip penceresinde daha derin TP var mı taramaya devam edilmez; ilk temas kuralı korunur.
-                break
-        pnl = pct_change(entry, last_price) if direction == "LONG" else pct_change(entry, last_price) * -1
-        stars = {"TP1": "⭐", "TP2": "⭐⭐", "TP3": "⭐⭐⭐"}.get(outcome, "")
-        text = (
-            f"⏱ 2 SAAT TP/STOP TAKİP\n"
-            f"⏰ Rapor: {tr_str()} | İlk temas: {hit_time}\n"
-            f"🎯 {sym} | {direction}\n"
-            f"💰 Giriş: {fmt_num(entry)} | Güncel: {fmt_num(last_price)}\n"
-            f"📍 Sonuç fiyatı: {fmt_num(hit_price) if hit_price else '-'}\n"
-            f"📊 Güncel PnL: %{pnl:.2f}\n"
-            f"🛑 Stop: {fmt_num(stop)}\n"
-            f"🎯 TP1: {fmt_num(tp1)} | TP2: {fmt_num(tp2)} | TP3: {fmt_num(tp3)}\n"
-            f"🧭 Mum tarama: {len(scan)} adet 1m mum incelendi.\n"
-            f"Sonuç: {outcome} {stars}\n"
-            f"Not: {detail}"
-        )
-        ok = await safe_send_telegram(text)
-        if ok:
-            stats["followup_sent"] += 1
-            rec["done"] = True
-            rec["outcome"] = outcome
-            rec["hit_time"] = hit_time
-            rec["hit_price"] = hit_price
+        checked += 1
+        high = safe_float(k[2])
+        low = safe_float(k[3])
+        close = safe_float(k[4])
+        ts_text = tr_str(start_ms / 1000.0) if start_ms else "-"
 
+        if direction == "LONG":
+            stop_hit = stop > 0 and low <= stop
+            tp1_hit = tp1 > 0 and high >= tp1
+            tp2_hit = tp2 > 0 and high >= tp2
+            tp3_hit = tp3 > 0 and high >= tp3
+            if stop_hit and (tp1_hit or tp2_hit or tp3_hit):
+                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Aynı mumda TP ve stop görüldü; güvenli hesapla stop önce kabul edildi."}
+            if stop_hit:
+                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Stop mum taramasında önce geldi."}
+            if tp3_hit:
+                return {"outcome": "TP3", "hit": "TP3", "hit_price": tp3, "hit_time": ts_text, "checked": checked, "note": "TP3 mum taramasında stop öncesi geldi."}
+            if tp2_hit:
+                best_tp, best_tp_price = "TP2", tp2
+                return {"outcome": "TP2", "hit": "TP2", "hit_price": tp2, "hit_time": ts_text, "checked": checked, "note": "TP2 mum taramasında stop öncesi geldi."}
+            if tp1_hit:
+                best_tp, best_tp_price = "TP1", tp1
+                return {"outcome": "TP1", "hit": "TP1", "hit_price": tp1, "hit_time": ts_text, "checked": checked, "note": "TP1 mum taramasında stop öncesi geldi."}
+        else:
+            stop_hit = stop > 0 and high >= stop
+            tp1_hit = tp1 > 0 and low <= tp1
+            tp2_hit = tp2 > 0 and low <= tp2
+            tp3_hit = tp3 > 0 and low <= tp3
+            if stop_hit and (tp1_hit or tp2_hit or tp3_hit):
+                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Aynı mumda TP ve stop görüldü; güvenli hesapla stop önce kabul edildi."}
+            if stop_hit:
+                return {"outcome": "STOP", "hit": "STOP", "hit_price": stop, "hit_time": ts_text, "checked": checked, "note": "Stop mum taramasında önce geldi."}
+            if tp3_hit:
+                return {"outcome": "TP3", "hit": "TP3", "hit_price": tp3, "hit_time": ts_text, "checked": checked, "note": "TP3 mum taramasında stop öncesi geldi."}
+            if tp2_hit:
+                return {"outcome": "TP2", "hit": "TP2", "hit_price": tp2, "hit_time": ts_text, "checked": checked, "note": "TP2 mum taramasında stop öncesi geldi."}
+            if tp1_hit:
+                return {"outcome": "TP1", "hit": "TP1", "hit_price": tp1, "hit_time": ts_text, "checked": checked, "note": "TP1 mum taramasında stop öncesi geldi."}
+
+    last_close = safe_float(klines[-1][4]) if klines else entry
+    pnl_pct = pct_change(entry, last_close) if direction == "LONG" else pct_change(entry, last_close) * -1
+    return {"outcome": "NO_HIT", "hit": "YOK", "hit_price": last_close, "hit_time": tr_str(), "checked": checked, "pnl_pct": round(pnl_pct, 2), "note": "Takip süresinde TP/stop görülmedi; sadece güncel PnL yazıldı."}
 
 async def followup_loop() -> None:
     while True:
         try:
-            await check_followups()
+            follows = memory.get("follows", {})
+            if not follows:
+                await asyncio.sleep(FOLLOWUP_CHECK_INTERVAL_SEC)
+                continue
+            now_ts = time.time()
+            for key, rec in list(follows.items()):
+                if rec.get("done"):
+                    continue
+                sent_ts = safe_float(rec.get("sent_ts", 0))
+                if now_ts - sent_ts < FOLLOWUP_DELAY_SEC:
+                    continue
+
+                sym = normalize_symbol(str(rec.get("symbol", key)).replace("LONG:", "").replace("SHORT:", ""))
+                direction = str(rec.get("direction", "SHORT")).upper()
+                entry = safe_float(rec.get("entry", 0))
+                stop = safe_float(rec.get("stop", 0))
+                tp1 = safe_float(rec.get("tp1", 0))
+                tp2 = safe_float(rec.get("tp2", 0))
+                tp3 = safe_float(rec.get("tp3", 0))
+                if entry <= 0:
+                    continue
+
+                k1 = await get_klines(sym, "1m", 180)
+                if not k1:
+                    continue
+
+                result = evaluate_tp_stop_path(k1, direction, sent_ts, entry, stop, tp1, tp2, tp3)
+                cur = safe_float(k1[-1][4])
+                pnl_pct = pct_change(entry, cur) if direction == "LONG" else pct_change(entry, cur) * -1
+                outcome = str(result.get("outcome", "NO_HIT"))
+                hit_price = safe_float(result.get("hit_price", cur))
+                hit_time = str(result.get("hit_time", "-"))
+
+                if outcome.startswith("TP"):
+                    title = f"✅ {outcome} GELDİ"
+                elif outcome == "STOP":
+                    title = "❌ STOP GELDİ"
+                else:
+                    title = "⏳ TP/STOP YOK"
+
+                pm_note = position_management_summary(k1, direction, entry, stop, tp1, tp2, tp3)
+                if outcome == "STOP":
+                    learn_from_stopped_signal(sym, direction, rec, result)
+                else:
+                    stats["position_management_updates"] = stats.get("position_management_updates", 0) + 1
+
+                text = (
+                    f"⏱ 2 SAAT TP/STOP TAKİP\n"
+                    f"{title}\n"
+                    f"⏰ Rapor: {tr_str()} | İlk temas: {hit_time}\n"
+                    f"🎯 {sym} | {direction}\n"
+                    f"💰 Giriş: {fmt_num(entry)} | Güncel: {fmt_num(cur)}\n"
+                    f"📍 Sonuç fiyatı: {fmt_num(hit_price)}\n"
+                    f"📊 Güncel PnL: %{pnl_pct:.2f}\n"
+                    f"🛑 Stop: {fmt_num(stop)}\n"
+                    f"🎯 TP1: {fmt_num(tp1)} | TP2: {fmt_num(tp2)} | TP3: {fmt_num(tp3)}\n"
+                    f"🧭 Mum tarama: {result.get('checked', 0)} adet 1m mum incelendi.\n"
+                    f"📌 Pozisyon yönetimi: {pm_note}\n"
+                    f"Not: {result.get('note', '-')}"
+                )
+                ok = await safe_send_telegram(text)
+                if ok:
+                    stats["followup_sent"] += 1
+                    rec["done"] = True
+                    rec["outcome"] = outcome
+                    rec["hit_price"] = hit_price
+                    rec["hit_time"] = hit_time
+                    rec["final_price"] = cur
+                    rec["pnl_pct"] = round(pnl_pct, 2)
         except Exception as e:
             logger.exception("followup_loop hata: %s", e)
         await asyncio.sleep(max(60, FOLLOWUP_CHECK_INTERVAL_SEC))
@@ -4661,13 +6896,21 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/scan - Hızlı tarama\n"
         "/whale BTCUSDT - Whale Eye detay\n"
         "/av - Görünmeyen yüz av listesi\n"
+        "/ws - WebSocket durumu\n"
+        "/hafiza - Hata hafızası\n"
+        "/backtest BTCUSDT SHORT 240 - Maliyetli replay backtest\n"
+        "/pozisyon - Aktif takip\n"
         "/test - Test mesajı\n"
         "/id - Chat ID göster\n\n"
         "V6 YENİ MOTORLAR:\n"
         "🐋 Open Interest Delta\n"
         "💰 Funding Rate Dedektörü\n"
         "🪤 Orderbook Spoofing\n"
-        "📊 CVD Diverjans"
+        "📊 CVD Diverjans\n"
+        "📡 WebSocket orderbook/trade\n"
+        "🧱 Destek/direnç final kapısı\n"
+        "🧠 Hata hafızası\n"
+        "🧪 Maliyetli backtest"
     )
 
 
@@ -4764,14 +7007,11 @@ async def cmd_whale(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"🔢 Uyumsuzluk: {whale.get('divergence_count', 0)}\n\n"
         f"📈 OPEN INTEREST\n"
         f"├─ Durum: {oi.get('divergence_type', '-')}\n"
-        f"├─ Kaynak: {oi.get('source', '-')}\n"
         f"├─ Güncel OI: {oi.get('current_oi', 0):,.0f}\n"
         f"├─ OI Değişim: %{oi.get('oi_change_pct', 0):.2f}\n"
-        f"├─ Fiyat Değişim: %{oi.get('price_change_pct', 0):.2f}\n"
-        f"└─ Yorum: {oi.get('reason', '-')}\n\n"
+        f"└─ Fiyat Değişim: %{oi.get('price_change_pct', 0):.2f}\n\n"
         f"💰 FUNDING RATE\n"
         f"├─ Oran: %{funding.get('funding_rate', 0):.4f}\n"
-        f"├─ Kaynak: {funding.get('source', '-')}\n"
         f"├─ Sinyal: {funding.get('funding_signal', '-')}\n"
         f"└─ Yorum: {funding.get('reason', '-')}\n\n"
         f"🪤 ORDERBOOK SPOOFING\n"
@@ -4836,6 +7076,8 @@ async def cmd_av(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # =========================================================
 async def post_init(application) -> None:
     active_count, pruned_count = await refresh_coin_pool(force=True)
+    await init_professional_crypto_ai_embedded()
+
     if AUTO_START_MESSAGE:
         await safe_send_telegram(
             f"🐋 {VERSION_NAME} BAŞLADI\n"
@@ -4844,18 +7086,17 @@ async def post_init(application) -> None:
             f"🗑️ Çıkarılan: {pruned_count}\n"
             f"📡 Veri: OKX {OKX_INST_TYPE}\n"
             f"🐋 Whale Eye: OI + Funding + Spoofing + CVD AKTİF\n"
-            f"🧱 Mimari: Profesyonel paket yapı + log rotation + cache cleanup\n"
             f"🎯 Günlük SHORT limit: {DAILY_SHORT_TOTAL_LIMIT}\n"
             f"🎯 Günlük LONG limit: {LONG_DAILY_TOTAL_LIMIT}"
         )
 
+    asyncio.create_task(okx_public_ws_loop())
     asyncio.create_task(hot_scan_loop())
     asyncio.create_task(deep_scan_loop())
+    asyncio.create_task(ai_auto_signal_loop())
     asyncio.create_task(symbol_refresh_loop())
     asyncio.create_task(heartbeat_loop())
     asyncio.create_task(followup_loop())
-    asyncio.create_task(position_management_loop())
-    asyncio.create_task(cache_cleanup_loop())
     asyncio.create_task(save_loop())
     logger.info("Tüm motorlar başlatıldı")
 
@@ -4868,6 +7109,171 @@ def validate_config() -> None:
         missing.append("TELEGRAM_CHAT_ID")
     if missing:
         raise RuntimeError(f"Eksik env: {', '.join(missing)}")
+
+
+
+async def cmd_ws(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    age = time.time() - safe_float(ws_runtime_state.get("last_msg_ts", 0)) if ws_runtime_state.get("last_msg_ts") else 9999
+    sample = list(ws_orderbooks.keys())[:10]
+    await update.message.reply_text(
+        "📡 WEBSOCKET DURUM\n"
+        f"Aktif: {PRO_WS_ENABLED} | Paket: {websockets is not None}\n"
+        f"URL: {PRO_WS_URL}\n"
+        f"Kanal: {PRO_WS_BOOK_CHANNEL} + {PRO_WS_TRADE_CHANNEL}\n"
+        f"Book sembol: {len(ws_orderbooks)} | Trade kayıt: {sum(len(v) for v in ws_trades.values())}\n"
+        f"Son mesaj yaşı: {age:.1f}s | Reconnect: {ws_runtime_state.get('reconnects', 0)}\n"
+        f"Örnek semboller: {', '.join(sample) if sample else '-'}\n"
+        f"Son hata: {ws_runtime_state.get('last_error', '-')}"
+    )
+
+
+async def cmd_hafiza(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    mm = memory.get("mistake_memory", {}) or {}
+    patterns = mm.get("patterns", {}) if isinstance(mm, dict) else {}
+    if not patterns:
+        await update.message.reply_text("🧠 Hata hafızası boş. Stop olan sinyal geldikçe pattern öğrenir.")
+        return
+    items = sorted(patterns.items(), key=lambda x: safe_float((x[1] or {}).get("last_ts", 0)), reverse=True)[:10]
+    lines = ["🧠 HATA HAFIZASI"]
+    for sig, rec in items:
+        lines.append(f"- stop={rec.get('stops', 0)} | {rec.get('last_symbol', '-')} | {tr_str(safe_float(rec.get('last_ts', 0)))}\n  {sig}")
+    await update.message.reply_text("\n".join(lines)[:3900])
+
+
+def _nl_clean_text(text: str) -> str:
+    import re
+    s = (text or "").strip().lower()
+    tr_map = str.maketrans({"ç":"c","ğ":"g","ı":"i","ö":"o","ş":"s","ü":"u","â":"a","î":"i","û":"u"})
+    s = s.translate(tr_map)
+    s = re.sub(r"[^a-z0-9\s\-_/\.]+", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _nl_coin_list_message() -> str:
+    shown = COINS[:45]
+    extra = len(COINS) - len(shown)
+    return f"📋 AKTİF COIN LİSTESİ ({len(COINS)})\n" + ", ".join(shown) + (f"\n+{extra} coin daha" if extra > 0 else "")
+
+
+def _nl_extract_coin(text_raw: str) -> Optional[str]:
+    cleaned = _nl_clean_text(text_raw).upper().replace("/", "-")
+    known = {coin_base_from_symbol(x): normalize_symbol(x) for x in COINS}
+    for token in cleaned.replace("-", " ").split():
+        if token in known:
+            return known[token]
+        if token.endswith("USDT") and len(token) > 4:
+            return normalize_symbol(token)
+    return None
+
+
+async def cmd_natural(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    txt_raw = update.message.text or ""
+    txt = _nl_clean_text(txt_raw)
+    if not txt:
+        return
+    stats["natural_language_hit"] = stats.get("natural_language_hit", 0) + 1
+    if any(x in txt for x in ("durum", "calisiyor", "ayakta", "bot ne durumda")):
+        await cmd_status(update, context); return
+    if any(x in txt for x in ("websocket", "ws", "canli veri", "orderbook")):
+        await cmd_ws(update, context); return
+    if any(x in txt for x in ("hafiza", "hata hafizasi", "stop hatasi")):
+        await cmd_hafiza(update, context); return
+    if any(x in txt for x in ("hangi coin", "coin listesi", "coinleri", "izliyorsun", "aktif coin")) and not _nl_extract_coin(txt_raw):
+        await update.message.reply_text(_nl_coin_list_message()); return
+    if "short" in txt and any(x in txt for x in ("var", "sinyal", "firsat")):
+        await update.message.reply_text(f"📨 SHORT: bugün {get_today_short_sent_count()}/{DAILY_SHORT_TOTAL_LIMIT}. Yeni temiz SHORT oluşursa otomatik gelir."); return
+    if "long" in txt and any(x in txt for x in ("var", "sinyal", "firsat")):
+        await update.message.reply_text(f"📨 LONG: bugün {get_today_long_sent_count()}/{LONG_DAILY_TOTAL_LIMIT}. Yeni temiz LONG oluşursa otomatik gelir."); return
+    if any(x in txt for x in ("sicak", "hot")):
+        await cmd_hot(update, context); return
+    if any(x in txt for x in ("balina", "whale", "funding", "cvd", "spoof")) or "oi" in set(txt.split()):
+        sym = _nl_extract_coin(txt_raw) or "BTC-USDT-SWAP"
+        context.args = [sym]
+        await cmd_whale(update, context); return
+    sym = _nl_extract_coin(txt_raw)
+    if sym and any(x in txt for x in ("bak", "analiz", "ne durumda", "coin")):
+        context.args = [sym]
+        await cmd_coin(update, context); return
+    await update.message.reply_text("Duydum dostum. Şunları yazabilirsin: durum ne, ws çalışıyor mu, short var mı, btc balina bak, sei bak, hangi coinleri izliyorsun, hata hafızası.")
+
+
+async def run_costed_backtest(symbol: str, direction: str, bars: int) -> str:
+    symbol = normalize_symbol(symbol)
+    direction = (direction or "SHORT").upper()
+    k1 = await get_klines(symbol, "1m", min(max(bars, 80), 300))
+    if len(k1) < 60:
+        return f"{symbol} backtest için veri yetersiz."
+    wins = losses = no_hit = 0
+    equity = 100.0
+    max_eq = equity
+    max_dd = 0.0
+    trades = 0
+    for i in range(30, len(k1)-20, 10):
+        entry = safe_float(k1[i][4])
+        if entry <= 0:
+            continue
+        sub_h = highs(k1[max(0, i-30):i+1]); sub_l = lows(k1[max(0, i-30):i+1])
+        a = atr(k1[max(0, i-40):i+1], 14)
+        last_atr = max(a[-1], entry*0.0015) if a else entry*0.0015
+        if direction == "LONG":
+            stop, tp1, tp2, tp3, rr = calculate_long_levels(entry, sub_l, last_atr, last_atr)
+        else:
+            stop, tp1, tp2, tp3, rr = calculate_short_levels(entry, sub_h, last_atr, last_atr)
+        res = evaluate_tp_stop_path(k1[i+1:i+21], direction, 0, entry, stop, tp1, tp2, tp3)
+        outcome = res.get("outcome")
+        trades += 1
+        cost = BACKTEST_FEE_PCT + BACKTEST_SLIPPAGE_PCT + (BACKTEST_FUNDING_PCT_PER_8H / 4.0)
+        if outcome and str(outcome).startswith("TP"):
+            wins += 1
+            hit = safe_float(res.get("hit_price", tp1))
+            gross = pct_change(entry, hit) if direction == "LONG" else pct_change(entry, hit) * -1
+            equity *= (1 + (gross - cost) / 100.0)
+        elif outcome == "STOP":
+            losses += 1
+            hit = safe_float(res.get("hit_price", stop))
+            gross = pct_change(entry, hit) if direction == "LONG" else pct_change(entry, hit) * -1
+            equity *= (1 + (gross - cost) / 100.0)
+        else:
+            no_hit += 1
+            equity *= (1 - cost / 100.0)
+        max_eq = max(max_eq, equity)
+        dd = (max_eq - equity) / max(max_eq, 1e-9) * 100.0
+        max_dd = max(max_dd, dd)
+    stats["backtest_runs"] = stats.get("backtest_runs", 0) + 1
+    stats["backtest_cost_applied"] = stats.get("backtest_cost_applied", 0) + trades
+    wr = wins / max(wins+losses, 1) * 100.0
+    return (
+        f"🧪 MALİYETLİ BACKTEST / REPLAY\n"
+        f"Coin: {symbol} | Yön: {direction} | Mum: {len(k1)}\n"
+        f"İşlem: {trades} | TP: {wins} | Stop: {losses} | No hit: {no_hit} | WR: %{wr:.1f}\n"
+        f"Final equity: {equity:.2f} | Max DD: %{max_dd:.2f}\n"
+        f"Maliyet: fee %{BACKTEST_FEE_PCT} + slip %{BACKTEST_SLIPPAGE_PCT} + funding tahmini.\n"
+        f"Not: Bu canlı motorun birebir kurumsal backtesti değil; maliyetli TP/stop yol replay testidir."
+    )
+
+
+async def cmd_backtest(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    args = context.args or []
+    if not args:
+        await update.message.reply_text("Kullanım: /backtest BTCUSDT SHORT 240")
+        return
+    sym = normalize_symbol(args[0])
+    direction = "LONG" if any(str(a).upper() == "LONG" for a in args[1:]) else "SHORT"
+    nums = [int(str(a)) for a in args[1:] if str(a).isdigit()]
+    bars = nums[-1] if nums else BACKTEST_DEFAULT_BARS
+    await update.message.reply_text(await run_costed_backtest(sym, direction, bars))
+
+
+async def cmd_pozisyon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    follows = memory.get("follows", {}) or {}
+    active = [r for r in follows.values() if not r.get("done")]
+    if not active:
+        await update.message.reply_text("📌 Aktif takipte pozisyon yok.")
+        return
+    lines = ["📌 AKTİF TAKİP / POZİSYON"]
+    for r in active[:12]:
+        lines.append(f"- {r.get('symbol')} {r.get('direction')} | entry={fmt_num(safe_float(r.get('entry',0)))} stop={fmt_num(safe_float(r.get('stop',0)))} TP1={fmt_num(safe_float(r.get('tp1',0)))}")
+    await update.message.reply_text("\n".join(lines))
 
 
 def build_app():
@@ -4883,13 +7289,25 @@ def build_app():
     application.add_handler(CommandHandler("whale", cmd_whale))
     application.add_handler(CommandHandler("trend", cmd_trend))
     application.add_handler(CommandHandler("av", cmd_av))
+    application.add_handler(CommandHandler("ws", cmd_ws))
+    application.add_handler(CommandHandler("hafiza", cmd_hafiza))
     application.add_handler(CommandHandler("backtest", cmd_backtest))
     application.add_handler(CommandHandler("pozisyon", cmd_pozisyon))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_natural))
+    # Profesyonel AI komutları ana bot seviyesinde garanti eklenir.
+    # Böylece embedded handler yüklenmese bile /ai_durum sessiz kalmaz.
+    application.add_handler(CommandHandler("ai_durum", cmd_ai_durum_direct))
+    application.add_handler(CommandHandler("zeka", cmd_zeka_direct))
+    application.add_handler(CommandHandler("arastir", cmd_arastir_direct))
+    application.add_handler(CommandHandler("yon", cmd_yon_direct))
+    # Eski embedded ekleyici de çalışabilir; aynı komut varsa ana direct handler ilk yakalar.
+    add_professional_ai_handlers_embedded(application)
     return application
 
 
 async def shutdown_app(signal_type=None):
     logger.info("Shutdown başlatılıyor... (signal: %s)", signal_type)
+    await shutdown_professional_crypto_ai_embedded()
     save_memory()
     logger.info("Memory kaydedildi.")
     if app:
@@ -4909,11 +7327,7 @@ def main() -> None:
         app = build_app()
         loop = asyncio.get_event_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
-            try:
-                if hasattr(loop, "add_signal_handler"):
-                    loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown_app(s.name)))
-            except (NotImplementedError, RuntimeError, ValueError):
-                logger.info("Bu platformda add_signal_handler desteklenmiyor: %s", getattr(sig, "name", sig))
+            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown_app(s.name)))
         logger.info("%s başlıyor", VERSION_NAME)
         app.run_polling(close_loop=False, drop_pending_updates=True)
     except KeyboardInterrupt:
