@@ -18,7 +18,7 @@ import signal
 import copy
 import os
 import json
-import timeurlencode
+import time
 import asyncio
 import logging
 import hashlib
@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from collections import deque
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from urllib.parse import 
+from urllib.parse import urlencode
 
 import requests
 
@@ -41,7 +41,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE PRO WS + SR + HATA HAFIZASI + HELAL FİLTRE - 100 COIN + 15M MA GUARD V2"
+VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE PRO WS + SR + HATA HAFIZASI + HELAL FİLTRE - 100 COIN + 15M MA GUARD V3 LONG/SHORT"
 
 # =========================================================
 # ENV / AYARLAR
