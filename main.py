@@ -41,7 +41,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE PRO WS + SR + HATA HAFIZASI + HELAL FİLTRE - 100 COIN + 15M MA GUARD V3 LONG/SHORT"
+VERSION_NAME = "Balina Avcısı V6.1 WHALE EYE PRO WS + SR + HATA HAFIZASI + HELAL FİLTRE - 100 COIN + 15M MA GUARD V4 LONG/SHORT TAM"
 
 # =========================================================
 # ENV / AYARLAR
@@ -338,6 +338,12 @@ SHORT_CONTEXT_BLOCK_BULLISH_CVD_WEAK_PUMP_LOW_RSI = os.getenv("SHORT_CONTEXT_BLO
 SHORT_15M_MA_GATE_ENABLED = os.getenv("SHORT_15M_MA_GATE_ENABLED", "true").lower() in ("1", "true", "yes", "on")
 SHORT_15M_FAST_MA = int(float(os.getenv("SHORT_15M_FAST_MA", "7")))
 SHORT_15M_SLOW_MA = int(float(os.getenv("SHORT_15M_SLOW_MA", "25")))
+
+# 15M MA GATE — LONG tarafı:
+# 15m sarı MA7, pembe MA25 üstüne çıkmadan LONG AL dışarı basılmaz.
+LONG_15M_MA_GATE_ENABLED = os.getenv("LONG_15M_MA_GATE_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+LONG_15M_FAST_MA = int(float(os.getenv("LONG_15M_FAST_MA", "7")))
+LONG_15M_SLOW_MA = int(float(os.getenv("LONG_15M_SLOW_MA", "25")))
 
 # =========================================================
 # V6.1 PRO EKLERİ — WS / SR / HAFIZA / REJİM / BACKTEST
@@ -650,6 +656,7 @@ stats: Dict[str, Any] = {
     "natural_language_hit": 0,
     "short_context_guard_block": 0,
     "short_15m_ma_gate_block": 0,
+    "long_15m_ma_gate_block": 0,
 }
 
 app = None
@@ -3596,6 +3603,7 @@ def build_heartbeat_message() -> str:
         f"🛡️ Kalite Blok: {stats['quality_gate_block']} | Kırılım Geçen: {stats['trend_breakdown_pass']} | Kapanış Blok: {stats['close_confirm_block']}\n"
         f"🧱 SR/Rejim/Makro blok: {stats.get('sr_block', 0)} / {stats.get('regime_block', 0)} / {stats.get('macro_block', 0)}\n"
         f"📉 15m MA SHORT blok: {stats.get('short_15m_ma_gate_block', 0)}\n"
+        f"📈 15m MA LONG blok: {stats.get('long_15m_ma_gate_block', 0)}\n"
         f"🧠 Hata Hafızası: öğrenme={stats.get('mistake_memory_learn', 0)} | blok={stats.get('mistake_memory_block', 0)}\n"
         f"🧪 Backtest: {stats.get('backtest_runs', 0)} | maliyetli={stats.get('backtest_cost_applied', 0)}\n"
         f"🔧 API Fail: {stats['api_fail']} | Telegram Fail: {stats['telegram_fail']} | Analiz: {stats['analyzed']}\n"
@@ -6533,6 +6541,44 @@ async def short_15m_ma_gate_reason(symbol: str, res: Dict[str, Any]) -> str:
     return ""
 
 
+async def long_15m_ma_gate_reason(symbol: str, res: Dict[str, Any]) -> str:
+    """
+    15m sarı MA7, pembe MA25 üstüne çıkmadan LONG dış sinyali basılmaz.
+    Bu kapı normal LONG ve AI otomatik köprüden gelen LONG sinyallerini de kontrol eder.
+    """
+    if not LONG_15M_MA_GATE_ENABLED:
+        return ""
+    if str(res.get("direction", "LONG")).upper() != "LONG":
+        return ""
+
+    ma_fast = safe_float(res.get("ma_fast_15m", 0), 0)
+    ma_slow = safe_float(res.get("ma_slow_15m", 0), 0)
+
+    # Payload içinde yoksa canlı 15m mumdan oku. Böylece AI otomatik payload da bypass edemez.
+    if ma_fast <= 0 or ma_slow <= 0:
+        try:
+            k15 = await get_klines(symbol, "15m", max(60, LONG_15M_SLOW_MA + 10))
+            if len(k15) < LONG_15M_SLOW_MA + 3:
+                return "15m MA LONG kapısı: veri yetersiz, dış LONG yok."
+            c15 = closes(k15)
+            e_fast = ema(c15, LONG_15M_FAST_MA)
+            e_slow = ema(c15, LONG_15M_SLOW_MA)
+            ma_fast = safe_float(e_fast[-1], 0)
+            ma_slow = safe_float(e_slow[-1], 0)
+            res["ma_fast_15m"] = round(ma_fast, 8)
+            res["ma_slow_15m"] = round(ma_slow, 8)
+        except Exception as e:
+            return f"15m MA LONG kapısı okunamadı: {str(e)[:80]}"
+
+    if ma_fast <= ma_slow:
+        return (
+            f"15m MA LONG kapısı BLOK: sarı MA{LONG_15M_FAST_MA} "
+            f"({fmt_num(ma_fast)}) pembe MA{LONG_15M_SLOW_MA} "
+            f"({fmt_num(ma_slow)}) üstüne çıkmadı; LONG sadece iç takip."
+        )
+    return ""
+
+
 def short_context_guard_reason(res: Dict[str, Any], binance_status: str = "") -> str:
     """
     ONE-USDT tarzı stop hatası koruması.
@@ -6582,52 +6628,6 @@ def short_context_guard_reason(res: Dict[str, Any], binance_status: str = "") ->
     return ""
 
 
-
-def _ma15_guard_common(res: Dict[str, Any], direction: str) -> str:
-    direction = (direction or "").upper()
-    if direction == "SHORT":
-        enabled = SHORT_15M_MA_GUARD_ENABLED
-        fast_n = SHORT_15M_MA_FAST
-        slow_n = SHORT_15M_MA_SLOW
-        relation = "altına"
-    else:
-        enabled = LONG_15M_MA_GUARD_ENABLED
-        fast_n = LONG_15M_MA_FAST
-        slow_n = LONG_15M_MA_SLOW
-        relation = "üstüne"
-
-    if not enabled:
-        return ""
-    if str(res.get("direction", "SHORT")).upper() != direction:
-        return ""
-
-    try:
-        symbol = normalize_symbol(str(res.get("symbol", "")))
-        k15 = get_klines_cached_sync(symbol, "15m", max(80, slow_n + 20))
-        if not k15 or len(k15) < max(fast_n, slow_n) + 3:
-            return f"15m MA {direction} kapısı: veri yetersiz; dış sinyal yok."
-        closes = [safe_float(k[4]) for k in k15 if len(k) > 4]
-        fast_vals = ema(closes, fast_n)
-        slow_vals = ema(closes, slow_n)
-        ma_fast = safe_float(fast_vals[-1], 0)
-        ma_slow = safe_float(slow_vals[-1], 0)
-
-        if direction == "SHORT" and ma_fast >= ma_slow:
-            return f"15m MA SHORT kapısı: MA{fast_n}={ma_fast:.8f} MA{slow_n}={ma_slow:.8f}; sarı çizgi pembe çizginin altına inmedi."
-        if direction == "LONG" and ma_fast <= ma_slow:
-            return f"15m MA LONG kapısı: MA{fast_n}={ma_fast:.8f} MA{slow_n}={ma_slow:.8f}; sarı çizgi pembe çizginin üstüne çıkmadı."
-        return ""
-    except Exception as e:
-        logger.warning("15m MA %s guard hata: %s", direction, e)
-        return f"15m MA {direction} kapısı hata/veri yok; dış sinyal yok."
-
-
-def short_15m_ma_guard_reason(res: Dict[str, Any]) -> str:
-    return _ma15_guard_common(res, "SHORT")
-
-
-def long_15m_ma_guard_reason(res: Dict[str, Any]) -> str:
-    return _ma15_guard_common(res, "LONG")
 
 
 async def maybe_send_signal(res: Dict[str, Any]) -> None:
@@ -6683,6 +6683,15 @@ async def maybe_send_signal(res: Dict[str, Any]) -> None:
             if ma_gate:
                 stats["short_15m_ma_gate_block"] = stats.get("short_15m_ma_gate_block", 0) + 1
                 logger.info("15M MA SHORT BLOK %s: %s", symbol, ma_gate)
+                update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | {ma_gate}"[:1400]})
+                return
+
+        # Son güvenlik: AI otomatik dahil hiçbir LONG, 15m MA7 > MA25 olmadan dışarı çıkamaz.
+        if direction == "LONG":
+            ma_gate = await long_15m_ma_gate_reason(symbol, res)
+            if ma_gate:
+                stats["long_15m_ma_gate_block"] = stats.get("long_15m_ma_gate_block", 0) + 1
+                logger.info("15M MA LONG BLOK %s: %s", symbol, ma_gate)
                 update_hot_memory({**copy.deepcopy(res), "stage": "READY", "reason": f"{res.get('reason', '')} | {ma_gate}"[:1400]})
                 return
 
