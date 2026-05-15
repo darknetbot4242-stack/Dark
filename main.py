@@ -43,7 +43,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Con
 # =========================================================
 # VERSİYON
 # =========================================================
-VERSION_NAME = "Balina Avcısı V6.1 MEXC ANA VERİ + MEXC OI/FUNDING + WS RATE LIMIT FIX V5.1 - DEEPSEEK AÇIK"
+VERSION_NAME = "Balina Avcısı V6.1 MEXC ANA VERİ + MEXC OI/FUNDING + WS STR DATA FIX V5.2 - DEEPSEEK AÇIK"
 
 # =========================================================
 # ENV / AYARLAR
@@ -2133,9 +2133,25 @@ async def mexc_public_ws_loop() -> None:
                         logger.warning("MEXC WS mesaj hata: %s", str(msg)[:220])
                         continue
 
-                    msym = str(msg.get("symbol") or (msg.get("data", {}) or {}).get("symbol", "")).upper().strip()
-                    inst_id = mexc_to_internal_symbol(msym) if msym else ""
+                    # MEXC WS bazı cevaplarda data alanını dict/list yerine string döndürebiliyor.
+                    # Eski kod burada (msg.get("data", {}) or {}).get(...) dediği için
+                    # 'str' object has no attribute 'get' hatasıyla WS sürekli kopuyordu.
                     data = msg.get("data", None)
+                    data_dict = data if isinstance(data, dict) else {}
+
+                    msym = str(
+                        msg.get("symbol")
+                        or data_dict.get("symbol", "")
+                        or data_dict.get("s", "")
+                    ).upper().strip()
+
+                    # Bazı MEXC mesajlarında sembol param içinde gelebilir.
+                    if not msym:
+                        param = msg.get("param")
+                        if isinstance(param, dict):
+                            msym = str(param.get("symbol", "")).upper().strip()
+
+                    inst_id = mexc_to_internal_symbol(msym) if msym else ""
                     if not inst_id or data is None:
                         continue
 
@@ -2178,7 +2194,7 @@ async def mexc_public_ws_loop() -> None:
             ws_runtime_state["last_error"] = str(e)[:180]
             ws_runtime_state["reconnects"] = int(ws_runtime_state.get("reconnects", 0)) + 1
             logger.warning("MEXC WS koptu, yeniden bağlanacak: %s", e)
-            await asyncio.sleep(max(3.0, PRO_WS_RECONNECT_SEC))
+            await asyncio.sleep(max(5.0, PRO_WS_RECONNECT_SEC))
 
 
 async def okx_public_ws_loop() -> None:
